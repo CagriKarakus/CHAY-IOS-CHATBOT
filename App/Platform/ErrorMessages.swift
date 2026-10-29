@@ -4,6 +4,9 @@ import AgentCore
 
 /// Hataları seçili dilde, kullanıcının anlayacağı mesaja çevirir.
 func userFacingMessage(for error: any Error) -> String {
+    if let repositoryError = error as? SkillRepository.RepositoryError {
+        return localizedDescription(of: repositoryError)
+    }
     if let llmError = error as? LLMError {
         return localizedDescription(of: llmError)
     }

@@ -34,6 +34,10 @@ struct AttachmentPreview: Codable, Hashable {
     let thumbnail: Data?
     /// Ses kayıtları için süre (saniye).
     let duration: Double?
+    /// Dokümanların dosya adı.
+    var name: String? = nil
+    /// Görselin tam boyutlu kopyası (`AttachmentFiles`), büyütüp göstermek için.
+    var file: String? = nil
 }
 
 /// Gönderilmeyi bekleyen ek.
@@ -74,8 +78,19 @@ final class ChatViewModel {
     private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
     private(set) var conversationID: UUID?
+    /// Gizli sohbet: kaydedilmez, hafıza okunmaz ve yazılmaz.
+    private(set) var isIncognito = false
+    /// Bu sohbette hafıza kullanılsın mı (sohbete özel).
+    private(set) var memoryEnabled = true
+    /// Bu sohbette seçili skill'ler; `nil` ise kütüphanedeki varsayılanlar.
+    private(set) var selectedSkillIDs: Set<UUID>?
     var input = ""
     var errorMessage: String?
+
+    /// Hafıza bu sohbette gerçekten kullanılıyor mu.
+    var usesMemory: Bool {
+        memoryEnabled && !isIncognito
+    }
 
     /// Modele giden mesajlar (sistem mesajı hariç): kullanıcı, asistan, araç çağrıları ve sonuçları.
     private var history: [ChatMessage] = []
@@ -88,6 +103,7 @@ final class ChatViewModel {
     private var approvalContinuation: CheckedContinuation<Bool, Never>?
     private var context: ModelContext?
     private var usageTracker: UsageTracker?
+    private var skillLibrary: SkillLibrary?
     private var currentModel: (providerID: UUID, name: String)?
 
     var canSend: Bool {
@@ -101,7 +117,23 @@ final class ChatViewModel {
         }
         pendingAttachments.append(PendingAttachment(
             attachment: Attachment(kind: .image, mimeType: "image/jpeg", data: prepared.jpeg),
-            preview: AttachmentPreview(kind: .image, thumbnail: prepared.thumbnail, duration: nil)
+            preview: AttachmentPreview(kind: .image, thumbnail: prepared.thumbnail, duration: nil, file: AttachmentFiles.save(prepared.jpeg))
+        ))
+    }
+
+    /// PDF/metin dosyasından çıkarılan metni ekler; çok uzunsa kırpılır.
+    func addDocument(text: String, name: String) {
+        let limit = 60_000
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = L("No text found in this file. Scanned PDFs (images only) can't be read.",
+                             "Bu dosyada metin bulunamadı. Taranmış (sadece görüntüden oluşan) PDF'ler okunamaz.")
+            return
+        }
+        let body = trimmed.count > limit ? String(trimmed.prefix(limit)) + "\n[…truncated at \(limit) characters]" : trimmed
+        pendingAttachments.append(PendingAttachment(
+            attachment: Attachment(kind: .document, mimeType: "text/plain", data: Data(body.utf8), name: name),
+            preview: AttachmentPreview(kind: .document, thumbnail: nil, duration: nil, name: name)
         ))
     }
 
@@ -121,20 +153,44 @@ final class ChatViewModel {
         !isStreaming && errorMessage != nil && history.last.map { $0.role == .user || $0.role == .tool } == true
     }
 
-    func attach(_ context: ModelContext, usage: UsageTracker) {
+    func attach(_ context: ModelContext, usage: UsageTracker, skills: SkillLibrary) {
         self.context = context
         usageTracker = usage
+        skillLibrary = skills
     }
 
-    /// Ekranı ve geçmişi temizler; önceki sohbet kayıtlı kalır.
-    func startNewChat() {
+    /// Ekranı ve geçmişi temizler; önceki sohbet kayıtlı kalır (gizli sohbet hiç kaydedilmez).
+    func startNewChat(incognito: Bool = false) {
         guard !isStreaming else { return }
+        if isIncognito {
+            AttachmentFiles.delete(items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
+        }
         items = []
         history = []
         summary = nil
         lastPromptTokens = nil
         conversationID = nil
         errorMessage = nil
+        isIncognito = incognito
+        memoryEnabled = true
+        selectedSkillIDs = nil
+    }
+
+    func setMemoryEnabled(_ enabled: Bool) {
+        memoryEnabled = enabled
+        persist()
+    }
+
+    func isSkillActive(_ skill: InstalledSkill) -> Bool {
+        selectedSkillIDs?.contains(skill.id) ?? skill.enabledByDefault
+    }
+
+    /// Skill'i bu sohbette açar/kapatır; ilk değişiklikte varsayılanlar sohbete kopyalanır.
+    func setSkill(_ skill: InstalledSkill, active: Bool) {
+        var selection = selectedSkillIDs ?? Set(skillLibrary?.active(in: nil).map(\.id) ?? [])
+        if active { selection.insert(skill.id) } else { selection.remove(skill.id) }
+        selectedSkillIDs = selection
+        persist()
     }
 
     func open(_ record: ConversationRecord) {
@@ -151,7 +207,10 @@ final class ChatViewModel {
         history = content.history.closingUnansweredToolCalls()
         summary = content.summary
         lastPromptTokens = content.lastPromptTokens
+        memoryEnabled = content.memoryEnabled ?? true
+        selectedSkillIDs = content.skillIDs.map(Set.init)
         conversationID = record.id
+        isIncognito = false
         errorMessage = nil
     }
 
@@ -281,6 +340,8 @@ final class ChatViewModel {
         guard let context, let selected = settings.selected else { return }
         currentModel = (selected.provider.id, selected.model.name)
         let notes = SwiftDataNoteStore(context: context)
+        let usesMemory = self.usesMemory
+        let skills = skillLibrary?.active(in: selectedSkillIDs).map(\.skill) ?? []
 
         let reply = ChatItem(role: .assistant, text: "")
         items.append(reply)
@@ -289,15 +350,20 @@ final class ChatViewModel {
 
         let transport = URLSessionTransport()
         let client = LLMClient(configuration: configuration, transport: transport)
+        var tools: [any Tool] = [
+            WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
+            FetchPageTool(transport: transport),
+            WriteFileTool(directory: DocumentFile.directory),
+        ]
+        if usesMemory {
+            tools += [SaveNoteTool(store: notes), ReadNotesTool(store: notes)] as [any Tool]
+        }
+        if !skills.isEmpty {
+            tools.append(UseSkillTool(skills: skills))
+        }
         let agent = AgentLoop(
             client: client,
-            tools: [
-                WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
-                FetchPageTool(transport: transport),
-                WriteFileTool(directory: DocumentFile.directory),
-                SaveNoteTool(store: notes),
-                ReadNotesTool(store: notes),
-            ],
+            tools: tools,
             approve: { [weak self] request in
                 await self?.requestApproval(request) ?? false
             }
@@ -317,9 +383,11 @@ final class ChatViewModel {
                     try await compact(using: client, replyID: reply.id)
                 }
                 let systemPrompt = SystemPrompt.make(
-                    notes: try await notes.allNotes(),
+                    notes: usesMemory ? try await notes.allNotes() : [],
                     summary: summary,
-                    userInstructions: userInstructions
+                    userInstructions: userInstructions,
+                    memoryEnabled: usesMemory,
+                    skills: skills
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 for try await event in agent.run(messages) {
@@ -416,8 +484,15 @@ final class ChatViewModel {
 
     /// Açık sohbeti kaydeder; ilk kayıtta yeni bir `ConversationRecord` oluşturur.
     private func persist() {
-        guard let context, !items.isEmpty else { return }
-        let content = ConversationContent(items: items, history: history, summary: summary, lastPromptTokens: lastPromptTokens)
+        guard let context, !items.isEmpty, !isIncognito else { return }
+        let content = ConversationContent(
+            items: items,
+            history: history,
+            summary: summary,
+            lastPromptTokens: lastPromptTokens,
+            memoryEnabled: memoryEnabled,
+            skillIDs: selectedSkillIDs.map(Array.init)
+        )
 
         if let conversationID,
            let record = try? context.fetch(FetchDescriptor<ConversationRecord>(predicate: #Predicate { $0.id == conversationID })).first {

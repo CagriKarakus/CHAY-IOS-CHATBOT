@@ -10,6 +10,10 @@ struct ConversationContent: Codable {
     var summary: String?
     /// Son model çağrısının giriş tokenı; sıkıştırma eşiği için.
     var lastPromptTokens: Int?
+    /// Sohbete özel hafıza ayarı (`nil` = açık).
+    var memoryEnabled: Bool?
+    /// Sohbete özel skill seçimi (`nil` = varsayılanlar).
+    var skillIDs: [UUID]?
 }
 
 /// Sohbetin SwiftData kaydı. İçerik tek bir JSON alanında tutulur; şema değişmeden mesaj yapısı gelişebilir.

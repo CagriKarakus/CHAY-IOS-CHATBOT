@@ -22,10 +22,11 @@ public enum ContextCompactor {
         let characters = messages.reduce(0) { total, message in
             total + (message.content?.count ?? 0)
                 + (message.toolCalls?.reduce(0) { $0 + $1.function.arguments.count } ?? 0)
+                + (message.attachments?.filter { $0.kind == .document }.reduce(0) { $0 + $1.data.count } ?? 0)
         }
         // Görsel/ses başına sağlayıcıya göre değişen yaklaşık bir maliyet.
-        let attachments = messages.reduce(0) { $0 + ($1.attachments?.count ?? 0) }
-        return characters / 3 + attachments * 1_000
+        let media = messages.reduce(0) { $0 + ($1.attachments?.filter { $0.kind != .document }.count ?? 0) }
+        return characters / 3 + media * 1_000
     }
 
     /// Son kullanıcı mesajından önceki araç sonuçlarını (okunmuş sayfalar, arama sonuçları) kısaltır.

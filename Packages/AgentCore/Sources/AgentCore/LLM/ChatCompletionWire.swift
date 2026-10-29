@@ -48,20 +48,31 @@ struct WireMessage: Encodable {
         var container = encoder.container(keyedBy: ChatMessage.CodingKeys.self)
         try container.encode(message.role, forKey: .role)
 
-        if let attachments = message.attachments, !attachments.isEmpty {
+        let attachments = message.attachments ?? []
+        let documents = attachments.filter { $0.kind == .document }
+        let media = attachments.filter { $0.kind != .document }
+        // Dokümanlar düz metin olarak eklenir; böylece sadece metin kabul eden modellerde de çalışır.
+        let text = ([message.content].compactMap { $0 }.filter { !$0.isEmpty } + documents.map(\.documentText))
+            .joined(separator: "\n\n")
+
+        if !media.isEmpty {
             var parts = container.nestedUnkeyedContainer(forKey: .content)
-            if let text = message.content, !text.isEmpty {
+            if !text.isEmpty {
                 try parts.encode(TextPart(text: text))
             }
-            for attachment in attachments {
+            for attachment in media {
                 let base64 = attachment.data.base64EncodedString()
                 switch attachment.kind {
                 case .image:
                     try parts.encode(ImagePart(image_url: .init(url: "data:\(attachment.mimeType);base64,\(base64)")))
                 case .audio:
                     try parts.encode(AudioPart(input_audio: .init(data: base64, format: attachment.audioFormat)))
+                case .document:
+                    break
                 }
             }
+        } else if !documents.isEmpty {
+            try container.encode(text, forKey: .content)
         } else {
             try container.encodeIfPresent(message.content, forKey: .content)
         }

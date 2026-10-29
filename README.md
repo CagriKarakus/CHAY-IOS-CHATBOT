@@ -11,6 +11,9 @@ A native iOS assistant that runs on **your own LLM API key**. It can research th
 - **Reasoning effort** (low / medium / high) for models that support `reasoning_effort`
 - **Images and audio**: attach photos or voice recordings for models that accept them; image-generation models use the standard `/images/generations` endpoint. Capabilities are read from `/models` when the server reports them (e.g. Evren `modalities`, OpenRouter `architecture`) and can be set by hand
 - **Read aloud** any reply with the phone's built-in voices
+- **PDF and text files**: text is extracted on the device and sent with the message, so it works with any model; photos can also be taken with the camera and opened full screen
+- **Skills** in the Agent Skills format (`SKILL.md`): import from any GitHub repository or plugin marketplace (e.g. `anthropics/skills`) or write your own; the model loads a skill's instructions when a task matches, and skills can be turned on or off per chat
+- **Per-chat memory switch** and **incognito chats** that are not saved and don't touch memory
 - **Web research** with [Tavily](https://tavily.com): the model decides how many searches and results a question needs, reads pages and cites sources
 - **Markdown documents**: the assistant writes `.md` files that show up in the Files app; view and share them in the app
 - **Memory**: lasting facts and preferences are saved as notes and shared with every chat; notes can be edited or deleted

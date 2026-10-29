@@ -11,6 +11,7 @@ struct ChatView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(UsageTracker.self) private var usage
+    @Environment(SkillLibrary.self) private var skills
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChatViewModel()
     @State private var path: [Route] = []
@@ -20,6 +21,9 @@ struct ChatView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showingPhotoPicker = false
     @State private var recorder = AudioRecorder()
+    @State private var showingCamera = false
+    @State private var showingFileImporter = false
+    @State private var viewedImage: ViewedImage?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -44,7 +48,7 @@ struct ChatView: View {
                 composer
             }
             .background(Palette.background)
-            .navigationTitle(L("AI Assistant", "AI Asistan"))
+            .navigationTitle(viewModel.isIncognito ? L("Incognito Chat", "Gizli sohbet") : L("AI Assistant", "AI Asistan"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -60,6 +64,17 @@ struct ChatView: View {
                             .foregroundStyle(Palette.text)
                     }
                     .accessibilityLabel(L("Menu", "Menü"))
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        inputFocused = false
+                        viewModel.startNewChat(incognito: !viewModel.isIncognito)
+                    } label: {
+                        Image(systemName: viewModel.isIncognito ? "eye.slash.fill" : "eye.slash")
+                            .foregroundStyle(viewModel.isIncognito ? Palette.purple : (viewModel.isStreaming ? Palette.textMuted : Palette.text))
+                    }
+                    .disabled(viewModel.isStreaming)
+                    .accessibilityLabel(viewModel.isIncognito ? L("Leave Incognito", "Gizli sohbetten çık") : L("Incognito Chat", "Gizli sohbet"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -107,6 +122,25 @@ struct ChatView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            .fullScreenCover(item: $viewedImage) { viewed in
+                ImageViewer(image: viewed.image)
+            }
+            .fullScreenCover(isPresented: $showingCamera) {
+                CameraPicker { image in
+                    if let data = image.jpegData(compressionQuality: 0.9) {
+                        viewModel.addImage(data)
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf, .plainText, .text]) { result in
+                guard case let .success(url) = result else { return }
+                guard let text = extractDocumentText(from: url) else {
+                    viewModel.errorMessage = L("Couldn't read the file.", "Dosya okunamadı.")
+                    return
+                }
+                viewModel.addDocument(text: text, name: url.lastPathComponent)
+            }
             .sheet(item: $selectingText) { item in
                 SelectableTextSheet(item: item)
             }
@@ -121,7 +155,7 @@ struct ChatView: View {
                 }
             }
             .onAppear {
-                viewModel.attach(modelContext, usage: usage)
+                viewModel.attach(modelContext, usage: usage, skills: skills)
                 if !settings.isConfigured {
                     showingSettings = true
                 }
@@ -136,14 +170,15 @@ struct ChatView: View {
                     ForEach(viewModel.items) { item in
                         switch item.role {
                         case .user:
-                            UserMessage(text: item.text, attachments: item.attachments ?? [])
+                            UserMessage(text: item.text, attachments: item.attachments ?? []) { viewedImage = ViewedImage(image: $0) }
                                 .id(item.id)
                         case .assistant:
                             AssistantMessage(
                                 item: item,
                                 isStreaming: viewModel.isStreaming && item.id == viewModel.items.last?.id,
                                 openDocument: { openedDocument = $0 },
-                                selectText: { selectingText = SelectableTextItem(text: $0) }
+                                selectText: { selectingText = SelectableTextItem(text: $0) },
+                                showImage: { viewedImage = ViewedImage(image: $0) }
                             )
                             .id(item.id)
                         }
@@ -172,10 +207,19 @@ struct ChatView: View {
     @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "sparkle")
+            Image(systemName: viewModel.isIncognito ? "eye.slash" : "sparkle")
                 .font(.system(size: 36))
                 .foregroundStyle(Palette.purple)
-            if settings.isConfigured {
+            if viewModel.isIncognito {
+                Text(L("Incognito chat", "Gizli sohbet"))
+                    .font(.title2.weight(.medium))
+                    .foregroundStyle(Palette.textBright)
+                Text(L("This chat isn't saved, and memory is neither used nor updated.",
+                       "Bu sohbet kaydedilmez; hafıza ne kullanılır ne de güncellenir."))
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Palette.textMuted)
+            } else if settings.isConfigured {
                 Text(L("What shall we look into today?", "Bugün neye bakalım?"))
                     .font(.title2.weight(.medium))
                     .foregroundStyle(Palette.textBright)
@@ -266,28 +310,57 @@ struct ChatView: View {
         }
     }
 
-    /// Sadece seçili model görsel veya ses kabul ediyorsa görünür.
-    @ViewBuilder
+    /// Ekler (modelin desteklediklerine göre) ve sohbete özel seçenekler: hafıza ve skill'ler.
     private var attachMenu: some View {
         let model = settings.selected?.model
-        if model?.acceptsImages == true || model?.acceptsAudio == true {
-            Menu {
+        return Menu {
+            Section {
                 if model?.acceptsImages == true {
+                    if CameraPicker.isAvailable {
+                        Button(L("Camera", "Kamera"), systemImage: "camera") { showingCamera = true }
+                    }
                     Button(L("Photo", "Fotoğraf"), systemImage: "photo") { showingPhotoPicker = true }
                 }
+                Button(L("PDF or Text File", "PDF veya metin dosyası"), systemImage: "doc.text") { showingFileImporter = true }
                 if model?.acceptsAudio == true {
                     Button(L("Record Audio", "Ses kaydet"), systemImage: "mic") { startRecording() }
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(Palette.text)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.background, in: .circle)
             }
-            .disabled(viewModel.isStreaming || recorder.isRecording)
-            .accessibilityLabel(L("Attach", "Ekle"))
+            Section {
+                if !viewModel.isIncognito {
+                    Toggle(isOn: Binding(get: { viewModel.memoryEnabled }, set: { viewModel.setMemoryEnabled($0) })) {
+                        Label(L("Memory in This Chat", "Bu sohbette hafıza"), systemImage: "brain")
+                    }
+                }
+                if !skills.skills.isEmpty {
+                    Menu {
+                        ForEach(skills.skills) { skill in
+                            Toggle(skill.skill.name, isOn: Binding(
+                                get: { viewModel.isSkillActive(skill) },
+                                set: { viewModel.setSkill(skill, active: $0) }
+                            ))
+                        }
+                    } label: {
+                        let active = skills.skills.filter(viewModel.isSkillActive).count
+                        Label(L("Skills (\(active) on)", "Skill'ler (\(active) açık)"), systemImage: "sparkles")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Palette.text)
+                .frame(width: 30, height: 30)
+                .background(Palette.background, in: .circle)
+                .overlay(alignment: .topTrailing) {
+                    // Hafıza bu sohbette kapalıysa küçük bir işaret
+                    if !viewModel.usesMemory && !viewModel.isIncognito {
+                        Circle().fill(Palette.yellow).frame(width: 8, height: 8)
+                    }
+                }
         }
+        .disabled(viewModel.isStreaming || recorder.isRecording)
+        .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
     }
 
     private func startRecording() {
@@ -309,6 +382,7 @@ struct ChatView: View {
 private struct UserMessage: View {
     let text: String
     let attachments: [AttachmentPreview]
+    let showImage: (UIImage) -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -316,6 +390,13 @@ private struct UserMessage: View {
                 HStack(spacing: 6) {
                     ForEach(Array(attachments.enumerated()), id: \.offset) { _, preview in
                         AttachmentThumbnail(preview: preview, size: 72)
+                            .onTapGesture {
+                                // Tam boyutlu kopya yoksa (eski sohbetler) küçük resim gösterilir.
+                                if let image = preview.file.flatMap(AttachmentFiles.image(named:))
+                                    ?? preview.thumbnail.flatMap(UIImage.init(data:)) {
+                                    showImage(image)
+                                }
+                            }
                     }
                 }
             }
@@ -344,6 +425,7 @@ private struct AssistantMessage: View {
     let isStreaming: Bool
     let openDocument: (DocumentFile) -> Void
     let selectText: (String) -> Void
+    let showImage: (UIImage) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -380,7 +462,7 @@ private struct AssistantMessage: View {
             }
 
             ForEach(item.images ?? [], id: \.self) { name in
-                GeneratedImageView(name: name)
+                GeneratedImageView(name: name, show: showImage)
             }
 
             ForEach(item.files, id: \.self) { name in

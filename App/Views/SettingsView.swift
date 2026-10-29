@@ -51,6 +51,12 @@ struct SettingsView: View {
                         Label(L("Token and search usage", "Token ve arama kullanımı"), systemImage: "chart.bar")
                             .foregroundStyle(Palette.textBright)
                     }
+                    NavigationLink {
+                        SkillsView()
+                    } label: {
+                        Label(L("Skills", "Skill'ler"), systemImage: "sparkles")
+                            .foregroundStyle(Palette.textBright)
+                    }
                 }
                 .listRowBackground(Palette.surface)
 

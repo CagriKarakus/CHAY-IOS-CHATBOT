@@ -30,21 +30,34 @@ public struct ChatMessage: Codable, Equatable, Sendable {
     }
 }
 
-/// Mesaja eklenen görsel veya ses kaydı.
+/// Mesaja eklenen görsel, ses kaydı veya doküman (PDF/metin dosyasından çıkarılmış metin).
 public struct Attachment: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
-        case image, audio
+        case image, audio, document
     }
 
     public var kind: Kind
-    /// Örn. "image/jpeg", "audio/wav".
+    /// Örn. "image/jpeg", "audio/wav", "text/plain".
     public var mimeType: String
+    /// Dokümanlarda UTF-8 metin.
     public var data: Data
+    /// Dokümanın dosya adı.
+    public var name: String?
 
-    public init(kind: Kind, mimeType: String, data: Data) {
+    public init(kind: Kind, mimeType: String, data: Data, name: String? = nil) {
         self.kind = kind
         self.mimeType = mimeType
         self.data = data
+        self.name = name
+    }
+
+    /// Dokümanın modele giden metni.
+    var documentText: String {
+        """
+        <document name="\(name ?? "document")">
+        \(String(decoding: data, as: UTF8.self))
+        </document>
+        """
     }
 
     /// `input_audio.format` değeri; OpenAI "wav" ve "mp3" kabul eder.

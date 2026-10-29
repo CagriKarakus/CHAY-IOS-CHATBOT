@@ -60,6 +60,7 @@ func activityTitle(toolName: String, detail: String?) -> String {
     case "write_file": L("Writing file", "Dosya yazılıyor")
     case "save_note": L("Saving to memory", "Hafızaya kaydediliyor")
     case "read_notes": L("Reading notes", "Notlar okunuyor")
+    case "use_skill": L("Using skill", "Skill kullanılıyor")
     default: toolName
     }
     guard let detail, !detail.isEmpty else { return verb }
@@ -90,5 +91,18 @@ func localizedDescription(of error: LLMError) -> String {
         L("Server error: \(message)", "Sunucu hatası: \(message)")
     case .invalidResponse:
         L("The server sent an unexpected response.", "Sunucudan beklenmeyen bir yanıt geldi.")
+    }
+}
+
+func localizedDescription(of error: SkillRepository.RepositoryError) -> String {
+    switch error {
+    case .invalidName:
+        L("Enter the repository as owner/repo or a github.com link.", "Repoyu owner/repo ya da github.com linki olarak yaz.")
+    case .notFound:
+        L("Repository not found (it must be public).", "Repo bulunamadı (herkese açık olmalı).")
+    case .rateLimited:
+        L("GitHub's hourly limit was reached. Try again later.", "GitHub'ın saatlik sınırına ulaşıldı. Daha sonra tekrar dene.")
+    case let .http(status):
+        L("GitHub error (\(status)).", "GitHub hatası (\(status)).")
     }
 }

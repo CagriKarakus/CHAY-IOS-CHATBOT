@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import NaturalLanguage
 import Observation
+import PDFKit
 import UIKit
 
 /// Modele gönderilecek görseli küçültür (uzun kenar en fazla 1568 px, JPEG) ve küçük bir önizleme üretir.
@@ -143,6 +144,43 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
         speakingID = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+}
+
+/// Gönderilen görsellerin tam boyutlu kopyaları (büyütüp bakabilmek için); sohbet silinince silinir.
+enum AttachmentFiles {
+    static var directory: URL {
+        URL.applicationSupportDirectory.appendingPathComponent("Attachments")
+    }
+
+    static func save(_ data: Data) -> String? {
+        let name = UUID().uuidString + ".jpg"
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return (try? data.write(to: directory.appendingPathComponent(name), options: .atomic)) == nil ? nil : name
+    }
+
+    static func image(named name: String) -> UIImage? {
+        UIImage(contentsOfFile: directory.appendingPathComponent(name).path)
+    }
+
+    static func delete(_ names: [String]) {
+        for name in names {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+    }
+}
+
+/// PDF veya metin dosyasından modele gönderilecek metni çıkarır. Taranmış (sadece görüntü) PDF'lerde metin boş döner.
+func extractDocumentText(from url: URL) -> String? {
+    let accessing = url.startAccessingSecurityScopedResource()
+    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+    if url.pathExtension.lowercased() == "pdf" {
+        guard let document = PDFDocument(url: url) else { return nil }
+        return (0..<document.pageCount)
+            .compactMap { document.page(at: $0)?.string }
+            .joined(separator: "\n\n")
+    }
+    return try? String(contentsOf: url, encoding: .utf8)
 }
 
 /// Üretilen görseli Documents klasörüne kaydeder (Dosyalar uygulamasında görünür); dosya adını döndürür.

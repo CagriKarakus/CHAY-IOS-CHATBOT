@@ -6,6 +6,7 @@ struct AIAssistantApp: App {
     @State private var settings = AppSettings()
     @State private var usage = UsageTracker()
     @State private var speech = SpeechReader()
+    @State private var skills = SkillLibrary()
 
     var body: some Scene {
         WindowGroup {
@@ -13,6 +14,7 @@ struct AIAssistantApp: App {
                 .environment(settings)
                 .environment(usage)
                 .environment(speech)
+                .environment(skills)
                 .preferredColorScheme(.dark)
                 .tint(Palette.blue)
         }
