@@ -14,6 +14,7 @@ struct ChatView: View {
     @Environment(SkillLibrary.self) private var skills
     @Environment(PromptLibrary.self) private var prompts
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel = ChatViewModel()
     @State private var path: [Route] = []
     @State private var showingSettings = false
@@ -192,8 +193,35 @@ struct ChatView: View {
                 if !settings.isConfigured {
                     showingSettings = true
                 }
+                runShortcutRequest()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: ShortcutInbox.didReceive)) { _ in
+                runShortcutRequest()
+            }
+            .onChange(of: scenePhase) {
+                switch scenePhase {
+                case .background: viewModel.appMovedToBackground()
+                case .active:
+                    viewModel.appBecameActive()
+                    runShortcutRequest()
+                default: break
+                }
             }
         }
+    }
+
+    /// Kestirmeler'den gelen istek varsa seçilen modelle yeni sohbet başlatıp gönderir.
+    private func runShortcutRequest() {
+        guard !viewModel.isStreaming, let request = ShortcutInbox.take() else { return }
+        // Bildirim ekran ilk kez görünmeden gelebilir; bağlam hazır olsun.
+        viewModel.attach(modelContext, usage: usage, skills: skills)
+        if let modelID = request.modelID {
+            settings.select(modelID)
+        }
+        path = []
+        viewModel.startNewChat()
+        viewModel.input = request.prompt
+        viewModel.send(using: settings)
     }
 
     private var messageList: some View {

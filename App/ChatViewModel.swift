@@ -99,6 +99,14 @@ final class ChatViewModel {
     private(set) var selectedSkillIDs: Set<UUID>?
     /// Düzenlenmekte olan kullanıcı mesajı; gönderilince o mesaj ve sonrası yeniden oluşturulur.
     private(set) var editingItemID: ChatItem.ID?
+
+    /// Uygulama şu an arka planda mı (ChatView bildirir).
+    private var isInBackground = false
+    /// Bu tur sürerken uygulama arka plana geçti mi.
+    private var backgroundedDuringTurn = false
+    /// Arka planda kesilen istek; uygulamaya dönülünce kendiliğinden yeniden denenir.
+    private var resumeOnForeground = false
+    private var lastSettings: AppSettings?
     var input = ""
     var errorMessage: String?
 
@@ -295,6 +303,52 @@ final class ChatViewModel {
     }
 
     /// Devam eden cevabı hemen keser.
+    // MARK: - Arka plan
+
+    func appMovedToBackground() {
+        isInBackground = true
+        if isStreaming {
+            backgroundedDuringTurn = true
+            TurnNotifications.scheduleStillRunning()
+        }
+    }
+
+    func appBecameActive() {
+        isInBackground = false
+        TurnNotifications.cancelStillRunning()
+        guard resumeOnForeground else { return }
+        resumeOnForeground = false
+        if let settings = lastSettings, canRetry {
+            retry(using: settings)
+        }
+    }
+
+    private func beginTurn(using settings: AppSettings) {
+        isStreaming = true
+        backgroundedDuringTurn = isInBackground
+        lastSettings = settings
+    }
+
+    /// Hata mesajı; iOS'un arka planda kestiği istek sunucu hatasıyla karışmasın diye ayrı anlatılır.
+    private func handleFailure(_ error: any Error) {
+        if backgroundedDuringTurn, error is URLError {
+            errorMessage = L("The request was interrupted because the app was in the background. It continues when you return to CHAY.",
+                             "Uygulama arka planda olduğu için istek yarıda kesildi. CHAY'a döndüğünde kaldığı yerden devam eder.")
+            resumeOnForeground = true
+        } else {
+            errorMessage = userFacingMessage(for: error)
+        }
+    }
+
+    private func endTurn() {
+        if isInBackground, errorMessage == nil {
+            TurnNotifications.notifyFinished(title: title)
+        } else {
+            TurnNotifications.cancelStillRunning()
+        }
+        backgroundedDuringTurn = false
+    }
+
     func stop() {
         turnTask?.cancel()
         resolveApproval(false)
@@ -314,6 +368,7 @@ final class ChatViewModel {
     }
 
     func send(using settings: AppSettings) {
+        TurnNotifications.requestPermissionIfNeeded()
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
         do {
@@ -377,7 +432,7 @@ final class ChatViewModel {
         var reply = ChatItem(role: .assistant, text: "")
         reply.activities = [ToolActivity(id: "image-\(reply.id)", toolName: "generate_image", title: L("Generating image", "Görsel üretiliyor"))]
         items.append(reply)
-        isStreaming = true
+        beginTurn(using: settings)
         let generator = ImageGenerator(configuration: configuration, transport: URLSessionTransport())
         let background = BackgroundActivity(name: "ImageGeneration")
 
@@ -396,7 +451,7 @@ final class ChatViewModel {
                 if Task.isCancelled || error is CancellationError {
                     markStopped(reply.id)
                 } else {
-                    errorMessage = userFacingMessage(for: error)
+                    handleFailure(error)
                 }
             }
             if let index = items.firstIndex(where: { $0.id == reply.id }),
@@ -406,6 +461,7 @@ final class ChatViewModel {
             isStreaming = false
             turnTask = nil
             persist()
+            endTurn()
             background.end()
         }
     }
@@ -438,7 +494,7 @@ final class ChatViewModel {
 
         let reply = ChatItem(role: .assistant, text: "")
         items.append(reply)
-        isStreaming = true
+        beginTurn(using: settings)
         pendingStepText = ""
 
         let providerID = selected.provider.id
@@ -503,7 +559,7 @@ final class ChatViewModel {
                 if Task.isCancelled || error is CancellationError {
                     markStopped(reply.id)
                 } else {
-                    errorMessage = userFacingMessage(for: error)
+                    handleFailure(error)
                 }
             }
             if let index = items.firstIndex(where: { $0.id == reply.id }) {
@@ -515,6 +571,7 @@ final class ChatViewModel {
             isStreaming = false
             turnTask = nil
             persist()
+            endTurn()
             background.end()
         }
     }

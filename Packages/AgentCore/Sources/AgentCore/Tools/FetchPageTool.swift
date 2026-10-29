@@ -8,7 +8,7 @@ public struct FetchPageTool: Tool {
     }
 
     public let name = "fetch_page"
-    public let description = "Reads the text of a web page. Use it when you need the details of a page from the search results."
+    public let description = "Reads the text of a web page, or the latest items of an RSS/Atom feed. Use it when you need the details of a page from the search results or when the user gives feed URLs."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
@@ -51,9 +51,12 @@ public struct FetchPageTool: Tool {
 
         let title: String
         let text: String
-        if contentType.contains("html") {
+        if let feed = FeedText.parse(response.body) {
+            // RSS/Atom: haber listesi (başlık, tarih, bağlantı, kısa özet).
+            (title, text) = (url.host ?? raw, feed)
+        } else if contentType.contains("html") {
             (title, text) = try readableText(fromHTML: body)
-        } else if contentType.hasPrefix("text/") || contentType.contains("json") || contentType.contains("markdown") {
+        } else if contentType.hasPrefix("text/") || contentType.contains("json") || contentType.contains("markdown") || contentType.contains("xml") {
             (title, text) = (url.host ?? raw, body)
         } else {
             throw ToolError.unsupportedContent(contentType)
