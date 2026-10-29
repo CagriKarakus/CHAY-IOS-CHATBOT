@@ -23,12 +23,16 @@ struct ModelProfile: Codable, Identifiable, Hashable {
     var acceptsImages: Bool?
     var acceptsAudio: Bool?
     var generatesImages: Bool?
+    /// Bağlam penceresi (token); sunucunun model kartından gelir, sıkıştırma eşiği için.
+    var contextLength: Int?
 
     /// Sunucunun bildirdiği yetenekleri uygular. `overwrite: false` ise sadece henüz ayarlanmamış olanları doldurur.
     mutating func apply(_ info: ModelInfo, overwrite: Bool = true) {
         if let value = info.acceptsImages, overwrite || acceptsImages == nil { acceptsImages = value }
         if let value = info.acceptsAudio, overwrite || acceptsAudio == nil { acceptsAudio = value }
         if let value = info.generatesImages, overwrite || generatesImages == nil { generatesImages = value }
+        if let value = info.supportsReasoningEffort, overwrite || !supportsEffort { supportsEffort = value }
+        if let value = info.contextLength, overwrite || contextLength == nil { contextLength = value }
     }
 }
 

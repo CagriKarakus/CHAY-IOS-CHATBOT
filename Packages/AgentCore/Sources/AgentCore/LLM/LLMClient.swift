@@ -3,6 +3,10 @@ import Foundation
 public enum LLMStreamEvent: Equatable, Sendable {
     /// Cevap metninin bir parçası.
     case text(String)
+    /// Modelin düşünme (reasoning) metninin bir parçası; `delta.reasoning` veya `delta.reasoning_content`.
+    case reasoning(String)
+    /// Model bir araç çağrısının argümanlarını yazıyor (ör. uzun bir artifact); ilerleme için.
+    case toolCallProgress(name: String, characters: Int)
     /// Modelin istediği araç çağrıları; akışın sonunda, birleştirilmiş olarak bir kez gelir.
     case toolCalls([ToolCall])
     /// Sunucu bildirdiyse çağrının token kullanımı; en sonda bir kez gelir.
@@ -60,6 +64,31 @@ public struct LLMClient: Sendable {
         return list.data.map(ModelInfo.init).sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
     }
 
+    /// Modelin kartı (`GET /models/{id}`): efor desteği, görsel ve bağlam uzunluğu.
+    /// Bu uç noktayı sunmayan veya yetenek bildirmeyen sunucularda `nil` döner; hata fırlatmaz.
+    public static func modelDetails(
+        baseURL: String,
+        apiKey: String,
+        extraHeaders: [String: String] = [:],
+        modelID: String,
+        transport: any HTTPTransport
+    ) async -> ModelInfo? {
+        guard let url = try? LLMConfiguration.validatedBaseURL(baseURL),
+              let encoded = modelID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let target = URL(string: url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/models/" + encoded)
+        else { return nil }
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let response = try? await transport.send(HTTPRequest(
+            url: target,
+            method: "GET",
+            headers: ["Authorization": "Bearer \(key)"].merging(LLMConfiguration.cleaned(extraHeaders)) { current, _ in current },
+            body: nil
+        )), (200..<300).contains(response.statusCode),
+            let card = try? JSONDecoder().decode(ModelCard.self, from: response.body)
+        else { return nil }
+        return card.info
+    }
+
     func makeRequest(_ messages: [ChatMessage], tools: [ToolDefinition] = []) throws -> HTTPRequest {
         let body = try JSONEncoder().encode(
             ChatCompletionRequest(
@@ -107,10 +136,16 @@ public struct LLMClient: Sendable {
                         let now = clock.now
                         firstChunk = firstChunk ?? now
                         lastChunk = now
+                        if let thought = delta.reasoning ?? delta.reasoningContent, !thought.isEmpty {
+                            onEvent(.reasoning(thought))
+                        }
                         if let text = delta.content, !text.isEmpty {
                             onEvent(.text(text))
                         }
                         delta.toolCalls?.forEach { toolCalls.add($0) }
+                        if let progress = toolCalls.progressUpdate() {
+                            onEvent(.toolCallProgress(name: progress.name, characters: progress.characters))
+                        }
                     } else if let message = apiErrorMessage(from: json) {
                         throw LLMError.server(message: message)
                     } else {
@@ -165,6 +200,16 @@ private struct ToolCallAccumulator {
     private var parts: [Int: (id: String?, name: String, arguments: String)] = [:]
 
     var isEmpty: Bool { parts.isEmpty }
+
+    /// Son bildirimden bu yana yeterince (≥ 200 karakter) ilerlendiyse yazılmakta olan çağrının adı ve argüman uzunluğu.
+    private var lastReported = -1
+    mutating func progressUpdate() -> (name: String, characters: Int)? {
+        guard let part = parts.max(by: { $0.key < $1.key })?.value, !part.name.isEmpty else { return nil }
+        let characters = part.arguments.count
+        guard lastReported < 0 || characters - lastReported >= 200 else { return nil }
+        lastReported = characters
+        return (part.name, characters)
+    }
 
     mutating func add(_ delta: ToolCallDelta) {
         let index = delta.index ?? 0

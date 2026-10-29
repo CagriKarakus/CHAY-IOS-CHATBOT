@@ -25,6 +25,7 @@ private struct EchoTool: Tool {
     let loop = AgentLoop(client: LLMClient(configuration: try makeConfiguration(), transport: transport), tools: [EchoTool()])
 
     let events = try await collect(loop.run([ChatMessage(role: .user, content: "Selam")]))
+        .filter { if case .preparingTool = $0 { false } else { true } }
 
     let call = ToolCall(id: "c1", name: "echo", arguments: #"{"x":1}"#)
     #expect(events == [

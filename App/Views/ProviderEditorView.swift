@@ -166,6 +166,8 @@ struct ProviderEditorView: View {
                     if let info = infos[name] { model.apply(info) }
                     return model
                 }
+                // Model kartından efor, görsel ve bağlam bilgisini de al (destekleyen sunucularda).
+                Task { await loadDetails(for: picked, overwrite: true) }
             }
         }
         .onAppear {
@@ -186,6 +188,22 @@ struct ProviderEditorView: View {
         newModelName = ""
     }
 
+    /// `GET /models/{id}` ile yetenekleri doldurur; sunucu desteklemiyorsa sessizce atlar.
+    private func loadDetails(for names: [String], overwrite: Bool) async {
+        for name in names {
+            guard let info = await LLMClient.modelDetails(
+                baseURL: draft.baseURL,
+                apiKey: apiKey,
+                extraHeaders: headerDictionary,
+                modelID: name,
+                transport: URLSessionTransport()
+            ) else { continue }
+            if let index = draft.models.firstIndex(where: { $0.name == name }) {
+                draft.models[index].apply(info, overwrite: overwrite)
+            }
+        }
+    }
+
     private func fetchModels() {
         errorMessage = nil
         isFetching = true
@@ -204,6 +222,7 @@ struct ProviderEditorView: View {
                         draft.models[index].apply(info, overwrite: false)
                     }
                 }
+                await loadDetails(for: draft.models.map(\.name), overwrite: false)
                 if models.isEmpty {
                     errorMessage = L("The server returned no models; you can add model names manually.", "Sunucu model listesi döndürmedi; model adlarını elle ekleyebilirsin.")
                 } else {

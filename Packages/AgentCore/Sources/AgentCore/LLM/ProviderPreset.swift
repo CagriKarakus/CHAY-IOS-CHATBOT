@@ -34,6 +34,7 @@ public struct ProviderPreset: Identifiable, Equatable, Sendable {
 
     public static let all: [ProviderPreset] = [
         // Router'lar
+        ProviderPreset(id: "evren", name: "EVREN LLM API", category: .router, baseURL: "https://evren-llmapi.ssyz.org.tr/v1"),
         ProviderPreset(id: "openrouter", name: "OpenRouter", category: .router, baseURL: "https://openrouter.ai/api/v1"),
         ProviderPreset(id: "vercel", name: "Vercel AI Gateway", category: .router, baseURL: "https://ai-gateway.vercel.sh/v1"),
         ProviderPreset(id: "portkey", name: "Portkey", category: .router, baseURL: "https://api.portkey.ai/v1",

@@ -122,10 +122,13 @@ struct ChatCompletionChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
             let content: String?
+            let reasoning: String?
+            let reasoningContent: String?
             let toolCalls: [ToolCallDelta]?
 
             enum CodingKeys: String, CodingKey {
-                case content
+                case content, reasoning
+                case reasoningContent = "reasoning_content"
                 case toolCalls = "tool_calls"
             }
         }

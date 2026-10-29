@@ -1,3 +1,5 @@
+import Foundation
+
 /// Sunucunun model listesindeki bir model ve (bildirildiyse) yetenekleri.
 public struct ModelInfo: Equatable, Sendable {
     public let id: String
@@ -7,12 +9,25 @@ public struct ModelInfo: Equatable, Sendable {
     public let outputModalities: [String]?
     /// Evren gibi sunucuların bildirdiği görev ("chat", görsel üretimi…).
     public let task: String?
+    /// Model kartında (`GET /models/{id}`) bildirildiyse `reasoning_effort` desteği.
+    public let supportsReasoningEffort: Bool?
+    /// Model kartında bildirildiyse bağlam penceresi (token).
+    public let contextLength: Int?
 
-    public init(id: String, inputModalities: [String]? = nil, outputModalities: [String]? = nil, task: String? = nil) {
+    public init(
+        id: String,
+        inputModalities: [String]? = nil,
+        outputModalities: [String]? = nil,
+        task: String? = nil,
+        supportsReasoningEffort: Bool? = nil,
+        contextLength: Int? = nil
+    ) {
         self.id = id
         self.inputModalities = inputModalities
         self.outputModalities = outputModalities
         self.task = task
+        self.supportsReasoningEffort = supportsReasoningEffort
+        self.contextLength = contextLength
     }
 
     /// Bilinmiyorsa `nil` (kullanıcı elle işaretler).
@@ -43,6 +58,33 @@ extension ModelInfo {
             inputModalities: model.architecture?.input_modalities ?? model.modalities,
             outputModalities: model.architecture?.output_modalities,
             task: model.task
+        )
+    }
+}
+
+/// `GET /models/{id}` yanıtı (Evren gibi sunucuların model kartı): bağlam ve yetenekler.
+struct ModelCard: Decodable {
+    struct Capabilities: Decodable {
+        let reasoning_effort: Bool?
+        let vision: Bool?
+    }
+    let id: String
+    let task: String?
+    let modalities: [String]?
+    let context_length: Int?
+    let capabilities: Capabilities?
+
+    var info: ModelInfo {
+        var inputs = modalities
+        if inputs == nil, let vision = capabilities?.vision {
+            inputs = vision ? ["text", "image"] : ["text"]
+        }
+        return ModelInfo(
+            id: id,
+            inputModalities: inputs,
+            task: task,
+            supportsReasoningEffort: capabilities?.reasoning_effort,
+            contextLength: context_length
         )
     }
 }

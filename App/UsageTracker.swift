@@ -28,6 +28,8 @@ final class UsageTracker {
         var tavilySearches = 0
         /// Tavily dışındaki servislerin arama sayıları (`SearchProvider.rawValue`); eski kayıtlarda yok.
         var otherSearches: [String: Int]?
+        /// Sağlayıcının bildirdiği günlük kalan token (anahtar: provider id); eski kayıtlarda yok.
+        var dailyRemaining: [String: DailyRemaining]?
         var since = Date()
     }
 
@@ -68,6 +70,22 @@ final class UsageTracker {
         totals.completionTokens += usage.completionTokens
         totals.requests += 1
         snapshot.models[Self.key(providerID, model)] = totals
+        save()
+    }
+
+    struct DailyRemaining: Codable, Equatable {
+        let tokens: Int
+        let updatedAt: Date
+    }
+
+    /// Son yanıtta bildirilen günlük kalan token.
+    func dailyRemaining(providerID: UUID) -> DailyRemaining? {
+        snapshot.dailyRemaining?[providerID.uuidString]
+    }
+
+    func recordDailyRemaining(_ tokens: Int, providerID: UUID) {
+        snapshot.dailyRemaining = snapshot.dailyRemaining ?? [:]
+        snapshot.dailyRemaining?[providerID.uuidString] = DailyRemaining(tokens: tokens, updatedAt: .now)
         save()
     }
 

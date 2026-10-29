@@ -28,6 +28,15 @@ struct UsageView: View {
                         row(model.name, usage.totals(providerID: provider.id, model: model.name))
                     }
                     row(L("Total", "Toplam"), usage.totals(providerID: provider.id), emphasized: true)
+                    if let daily = usage.dailyRemaining(providerID: provider.id) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            valueRow(L("Remaining today", "Bugün kalan"), daily.tokens.formatted() + " token")
+                            Text(L("Updated \(daily.updatedAt.formatted(.relative(presentation: .named)))",
+                                   "\(daily.updatedAt.formatted(.relative(presentation: .named))) güncellendi"))
+                                .font(.caption)
+                                .foregroundStyle(Palette.textMuted)
+                        }
+                    }
                     if ProviderBalance.supportedPresets.contains(balancePreset(provider) ?? "") {
                         balanceRows(balances[provider.id])
                     }

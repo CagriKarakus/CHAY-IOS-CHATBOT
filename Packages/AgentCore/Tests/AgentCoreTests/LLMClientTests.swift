@@ -36,7 +36,7 @@ import Testing
 
     let events = try await collect(client.streamChat([]))
 
-    #expect(withoutUsage(events) == [.toolCalls([ToolCall(id: "chatcmpl-tool-8714506b287573ca", name: "get_weather", arguments: #"{"city": "İstanbul"}"#)])])
+    #expect(events.filter { if case .toolCalls = $0 { true } else { false } } == [.toolCalls([ToolCall(id: "chatcmpl-tool-8714506b287573ca", name: "get_weather", arguments: #"{"city": "İstanbul"}"#)])])
 }
 
 @Test func mergesToolCallsByIndex() async throws {
@@ -49,7 +49,7 @@ import Testing
 
     let events = try await collect(client.streamChat([]))
 
-    #expect(events == [.toolCalls([
+    #expect(events.filter { if case .toolCalls = $0 { true } else { false } } == [.toolCalls([
         ToolCall(id: "a", name: "web_search", arguments: #"{"query":"x"}"#),
         ToolCall(id: "b", name: "fetch_page", arguments: #"{"url":"https://a.com"}"#),
     ])])

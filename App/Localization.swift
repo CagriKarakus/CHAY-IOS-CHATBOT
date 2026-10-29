@@ -79,6 +79,11 @@ func localizedDescription(of error: LLMError) -> String {
         L("No API key entered.", "API key girilmemiş.")
     case .missingModel:
         L("No model selected. Add a model in Settings.", "Model seçilmemiş. Ayarlar'dan bir model ekle.")
+    case let .http(403, message?):
+        // Ör. Evren'de kullanım şartları onaylanmamışsa sunucunun açıklaması gösterilir.
+        L("Access denied: \(message)", "Erişim reddedildi: \(message)")
+    case .http(503, _):
+        L("The model is busy right now. Try again in a moment.", "Model şu an dolu. Biraz sonra tekrar dene.")
     case .http(401, _), .http(403, _):
         L("The API key is invalid or has no access to this model. Check your settings.",
           "API key geçersiz veya bu modele erişim yetkin yok. Ayarları kontrol et.")

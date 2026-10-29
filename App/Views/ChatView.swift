@@ -519,8 +519,16 @@ private struct AssistantMessage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let reasoning = item.reasoning, !reasoning.isEmpty {
+                ThinkingView(text: reasoning, isActive: isStreaming && item.text.isEmpty && item.preparing == nil)
+            }
+
             if !item.activities.isEmpty {
                 ToolLog(activities: item.activities, isStreaming: isStreaming)
+            }
+
+            if isStreaming, let preparing = item.preparing {
+                PreparingRow(preparing: preparing)
             }
 
             if !item.text.isEmpty {
@@ -546,7 +554,8 @@ private struct AssistantMessage: View {
                         }
                     }
                     .disabled(isStreaming)
-            } else if isStreaming, item.activities.allSatisfy({ $0.state != .running }) {
+            } else if isStreaming, item.preparing == nil, item.reasoning?.isEmpty ?? true,
+                      item.activities.allSatisfy({ $0.state != .running }) {
                 ProgressView()
                     .tint(Palette.textMuted)
             }

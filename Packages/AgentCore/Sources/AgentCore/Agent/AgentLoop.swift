@@ -3,6 +3,10 @@ import Foundation
 public enum AgentEvent: Equatable, Sendable {
     /// Cevap metninin bir parçası.
     case text(String)
+    /// Modelin düşünme metninin bir parçası.
+    case reasoning(String)
+    /// Model bir aracın argümanlarını yazıyor; araç henüz çalışmadı.
+    case preparingTool(name: String, characters: Int)
     /// Bir araç çalışmaya başladı. `id` araç çağrısının kimliği.
     case toolStarted(id: String, name: String, detail: String?)
     case toolFinished(id: String, sources: [Source], files: [URL], failed: Bool)
@@ -69,6 +73,10 @@ public struct AgentLoop: Sendable {
                     calls = requested
                 case let .usage(usage):
                     emit(.usage(usage))
+                case let .reasoning(thought):
+                    emit(.reasoning(thought))
+                case let .toolCallProgress(name, characters):
+                    emit(.preparingTool(name: name, characters: characters))
                 }
             }
 

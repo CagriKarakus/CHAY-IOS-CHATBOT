@@ -52,5 +52,6 @@ import Testing
 @Test func matchesPresetByHost() {
     #expect(ProviderPreset.matching(baseURL: " https://OpenRouter.ai/api/v1 ")?.id == "openrouter")
     #expect(ProviderPreset.matching(baseURL: "https://api.deepseek.com")?.id == "deepseek")
-    #expect(ProviderPreset.matching(baseURL: "https://evren-llmapi.ssyz.org.tr/v1") == nil)
+    #expect(ProviderPreset.matching(baseURL: "https://evren-llmapi.ssyz.org.tr/v1")?.id == "evren")
+    #expect(ProviderPreset.matching(baseURL: "https://my-own-router.example.com/v1") == nil)
 }

@@ -4,6 +4,8 @@ import Foundation
 /// `HTTPTransport`'un URLSession uygulaması (`bytes(for:)` ile satır satır akış).
 struct URLSessionTransport: HTTPTransport {
     var session: URLSession = .shared
+    /// Yanıtta günlük kalan token başlığı (Evren: `x-evren-daily-remaining-tokens`) varsa çağrılır.
+    var onDailyRemaining: (@Sendable (Int) -> Void)?
 
     func lines(for request: HTTPRequest) -> AsyncThrowingStream<String, any Error> {
         AsyncThrowingStream { continuation in
@@ -11,6 +13,9 @@ struct URLSessionTransport: HTTPTransport {
                 do {
                     let (bytes, response) = try await session.bytes(for: urlRequest(from: request))
                     guard let http = response as? HTTPURLResponse else { throw LLMError.invalidResponse }
+                    if let value = http.value(forHTTPHeaderField: "x-evren-daily-remaining-tokens"), let remaining = Int(value) {
+                        onDailyRemaining?(remaining)
+                    }
 
                     guard (200..<300).contains(http.statusCode) else {
                         var body = ""

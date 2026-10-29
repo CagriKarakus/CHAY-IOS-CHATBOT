@@ -26,6 +26,10 @@ struct ChatItem: Identifiable, Codable {
     var attachments: [AttachmentPreview]?
     /// Üretilen görsellerin Documents'taki dosya adları.
     var images: [String]?
+    /// Modelin düşünme metni (gösterim için; modele geri gönderilmez).
+    var reasoning: String?
+    /// Model bir aracın argümanlarını yazarken (ör. uzun artifact) gösterilen ilerleme.
+    var preparing: PreparingTool?
 }
 
 struct AttachmentPreview: Codable, Hashable {
@@ -38,6 +42,12 @@ struct AttachmentPreview: Codable, Hashable {
     var name: String? = nil
     /// Görselin tam boyutlu kopyası (`AttachmentFiles`), büyütüp göstermek için.
     var file: String? = nil
+}
+
+/// Henüz çalışmamış, argümanları akmakta olan araç çağrısı.
+struct PreparingTool: Codable, Hashable {
+    let toolName: String
+    let characters: Int
 }
 
 /// Gönderilmeyi bekleyen ek.
@@ -431,7 +441,12 @@ final class ChatViewModel {
         isStreaming = true
         pendingStepText = ""
 
-        let transport = URLSessionTransport()
+        let providerID = selected.provider.id
+        let tracker = usageTracker
+        var transport = URLSessionTransport()
+        transport.onDailyRemaining = { remaining in
+            Task { @MainActor in tracker?.recordDailyRemaining(remaining, providerID: providerID) }
+        }
         let client = LLMClient(configuration: configuration, transport: transport)
         var tools: [any Tool] = [
             WebSearchTool(backend: settings.searchBackend, transport: transport),
@@ -457,7 +472,9 @@ final class ChatViewModel {
 
         // Eski turların okunmuş sayfaları ve arama sonuçları kısaltılır; asıl bilgi cevaplarda zaten var.
         history = ContextCompactor.trimmingOldToolResults(history)
-        let needsCompaction = max(lastPromptTokens ?? 0, ContextCompactor.estimatedTokens(history)) > Self.compactionThreshold
+        // Bağlam penceresi biliniyorsa yarısı (en fazla 128K), bilinmiyorsa 48K token.
+        let threshold = selected.model.contextLength.map { min(max($0 / 2, 16_000), 128_000) } ?? Self.compactionThreshold
+        let needsCompaction = max(lastPromptTokens ?? 0, ContextCompactor.estimatedTokens(history)) > threshold
 
         // Kullanıcı uygulamadan çıkarsa iOS'un verdiği ek sürede istek tamamlansın.
         let background = BackgroundActivity(name: "AgentTurn")
@@ -489,9 +506,11 @@ final class ChatViewModel {
                     errorMessage = userFacingMessage(for: error)
                 }
             }
-            if let index = items.firstIndex(where: { $0.id == reply.id }),
-               items[index].text.isEmpty, items[index].activities.isEmpty, items[index].stopped != true {
-                items.remove(at: index)
+            if let index = items.firstIndex(where: { $0.id == reply.id }) {
+                items[index].preparing = nil
+                if items[index].text.isEmpty, items[index].activities.isEmpty, items[index].stopped != true {
+                    items.remove(at: index)
+                }
             }
             isStreaming = false
             turnTask = nil
@@ -534,8 +553,18 @@ final class ChatViewModel {
         switch event {
         case let .text(delta):
             items[index].text += delta
+            items[index].preparing = nil
             pendingStepText += delta
+        case let .reasoning(thought):
+            items[index].reasoning = (items[index].reasoning ?? "") + thought
+        case let .preparingTool(name, characters):
+            items[index].preparing = PreparingTool(toolName: name, characters: characters)
         case let .toolStarted(callID, name, detail):
+            items[index].preparing = nil
+            // Sonraki adımın düşüncesi öncekiyle birleşmesin.
+            if let reasoning = items[index].reasoning, !reasoning.isEmpty, !reasoning.hasSuffix("\n\n") {
+                items[index].reasoning = reasoning + "\n\n"
+            }
             // Araçtan önce yazılmış metinle sonraki cevap birbirine yapışmasın.
             if !items[index].text.isEmpty, !items[index].text.hasSuffix("\n\n") {
                 items[index].text += "\n\n"
