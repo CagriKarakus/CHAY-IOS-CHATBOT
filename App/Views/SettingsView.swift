@@ -179,11 +179,11 @@ extension SettingsView {
     fileprivate var searchFooter: String {
         switch searchProvider {
         case .tavily:
-            L("Free tier at tavily.com. If the key is empty, the assistant can't search the web.",
-              "tavily.com'da ücretsiz plan var. Key boşsa asistan web'de arama yapamaz.")
+            L("Free tier at tavily.com. If the key is empty, invalid or out of quota, searches fall back to DuckDuckGo.",
+              "tavily.com'da ücretsiz plan var. Key boş, geçersiz veya kota bitmişse aramalar DuckDuckGo ile yapılır.")
         case .brave:
-            L("Get a key at brave.com/search/api (free tier available).",
-              "Key'i brave.com/search/api adresinden alabilirsin (ücretsiz plan var).")
+            L("Get a key at brave.com/search/api (free tier available). If the key is empty, invalid or out of quota, searches fall back to DuckDuckGo.",
+              "Key'i brave.com/search/api adresinden alabilirsin (ücretsiz plan var). Key boş, geçersiz veya kota bitmişse aramalar DuckDuckGo ile yapılır.")
         case .searxng:
             L("Address of your own SearXNG instance (HTTPS). JSON output must be enabled in its settings (search.formats: json).",
               "Kendi SearXNG sunucunun adresi (HTTPS). Sunucu ayarlarında JSON çıktısı açık olmalı (search.formats: json).")

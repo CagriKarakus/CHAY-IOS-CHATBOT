@@ -224,6 +224,14 @@ final class AppSettings {
         }
     }
 
+    /// Tavily veya Brave key/kota hatası verirse aramalar DuckDuckGo ile tekrarlanır.
+    var searchFallback: SearchBackend? {
+        switch searchProvider {
+        case .tavily, .brave: .duckDuckGo
+        case .searxng, .duckduckgo: nil
+        }
+    }
+
     func saveSearch(provider: SearchProvider, braveKey: String, searxngURL: String) {
         searchProvider = provider
         UserDefaults.standard.set(provider.rawValue, forKey: Keys.searchProvider)
@@ -298,6 +306,15 @@ enum SearchProvider: String, CaseIterable, Identifiable {
     case tavily, brave, searxng, duckduckgo
 
     var id: String { rawValue }
+
+    init(_ backend: SearchBackend) {
+        switch backend {
+        case .tavily: self = .tavily
+        case .brave: self = .brave
+        case .searxng: self = .searxng
+        case .duckDuckGo: self = .duckduckgo
+        }
+    }
 
     var title: String {
         switch self {

@@ -57,12 +57,24 @@ public struct WebSearchTool: Tool {
     private let backend: SearchBackend
     private let transport: any HTTPTransport
     private let defaultMaxResults: Int
+    private let fallback: SearchBackend?
+    private let onSearch: (@Sendable (SearchBackend) -> Void)?
 
     /// `defaultMaxResults`: model `max_results` vermezse kullanılır.
-    public init(backend: SearchBackend, transport: any HTTPTransport, defaultMaxResults: Int = 3) {
+    /// `fallback`: asıl servis key veya kota hatası verirse aynı arama bununla tekrarlanır.
+    /// `onSearch`: başarılı her aramada kullanılan servisle çağrılır (sayaç için).
+    public init(
+        backend: SearchBackend,
+        transport: any HTTPTransport,
+        defaultMaxResults: Int = 3,
+        fallback: SearchBackend? = nil,
+        onSearch: (@Sendable (SearchBackend) -> Void)? = nil
+    ) {
         self.backend = backend
         self.transport = transport
         self.defaultMaxResults = defaultMaxResults
+        self.fallback = fallback
+        self.onSearch = onSearch
     }
 
     /// Tavily ile arama.
@@ -79,9 +91,20 @@ public struct WebSearchTool: Tool {
         let query = arguments.query
         let maxResults = (arguments.max_results ?? defaultMaxResults).clamped(to: Self.resultLimit)
 
-        let results = Array(try await search(query, maxResults: maxResults).prefix(maxResults))
+        var used = backend
+        var note = ""
+        var found: [Result]
+        do {
+            found = try await search(query, maxResults: maxResults, on: backend)
+        } catch let error as ToolError where fallback != nil && Self.isAccountProblem(error) {
+            used = fallback!
+            found = try await search(query, maxResults: maxResults, on: used)
+            note = "Note: \(backend.serviceName) failed (\(error.localizedDescription)), so these results come from \(used.serviceName).\n\n"
+        }
+        onSearch?(used)
+        let results = Array(found.prefix(maxResults))
         guard !results.isEmpty else {
-            return ToolOutput(content: "No results found for '\(query)'.")
+            return ToolOutput(content: note + "No results found for '\(query)'.")
         }
 
         let listing = results.enumerated().map { index, result in
@@ -90,10 +113,19 @@ public struct WebSearchTool: Tool {
         let sources = results.compactMap { result in
             URL(string: result.url).map { Source(title: result.title, url: $0) }
         }
-        return ToolOutput(content: untrustedContent(listing, source: "web_search: \(query)"), sources: sources)
+        return ToolOutput(content: note + untrustedContent(listing, source: "web_search: \(query)"), sources: sources)
     }
 
-    private func search(_ query: String, maxResults: Int) async throws -> [Result] {
+    /// Yedeğe geçmeyi gerektiren hatalar: key yok/geçersiz veya kota bitti (Tavily 432/433, Brave 429).
+    static func isAccountProblem(_ error: ToolError) -> Bool {
+        switch error {
+        case .missingAPIKey: true
+        case let .http(status): [401, 403, 429, 432, 433].contains(status)
+        default: false
+        }
+    }
+
+    private func search(_ query: String, maxResults: Int, on backend: SearchBackend) async throws -> [Result] {
         switch backend {
         case let .tavily(apiKey):
             let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)

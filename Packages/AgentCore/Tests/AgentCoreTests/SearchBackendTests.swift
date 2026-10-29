@@ -65,6 +65,44 @@ import Testing
     #expect(empty.content == "No results found for 'x'.")
 }
 
+@Test func fallsBackToDuckDuckGoOnQuotaOrKeyErrors() async throws {
+    let used = UsedBackends()
+    let quota = WebSearchTool(backend: .tavily(apiKey: "k"), transport: HostTransport(statuses: ["api.tavily.com": 432]),
+                              fallback: .duckDuckGo, onSearch: { used.append($0) })
+    let output = try await quota.run(arguments: #"{"query":"x"}"#)
+    #expect(output.content.hasPrefix("Note: Tavily failed (HTTP error 432.), so these results come from DuckDuckGo."))
+    #expect(used.all == [.duckDuckGo])
+
+    let noKey = WebSearchTool(backend: .brave(apiKey: ""), transport: SendRecorder(json: "<html></html>"), fallback: .duckDuckGo)
+    #expect(try await noKey.run(arguments: #"{"query":"x"}"#).content.contains("Brave Search failed"))
+
+    // Sunucu hatası yedeğe geçirmez.
+    await #expect(throws: ToolError.http(status: 500)) {
+        try await WebSearchTool(backend: .tavily(apiKey: "k"), transport: SendRecorder(status: 500, json: ""), fallback: .duckDuckGo)
+            .run(arguments: #"{"query":"x"}"#)
+    }
+}
+
+/// Her sunucuya ayrı durum kodu döndürür; listede olmayanlar 200 ve boş sayfa alır.
+struct HostTransport: HTTPTransport {
+    let statuses: [String: Int]
+
+    func lines(for request: HTTPRequest) -> AsyncThrowingStream<String, any Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        HTTPResponse(statusCode: statuses[request.url.host ?? ""] ?? 200, contentType: "text/html", body: Data("<html></html>".utf8))
+    }
+}
+
+final class UsedBackends: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [SearchBackend] = []
+    var all: [SearchBackend] { lock.withLock { items } }
+    func append(_ backend: SearchBackend) { lock.withLock { items.append(backend) } }
+}
+
 @Test func searchBackendsValidateSettings() async throws {
     await #expect(throws: ToolError.missingAPIKey(service: "Brave Search")) {
         try await WebSearchTool(backend: .brave(apiKey: ""), transport: MockTransport()).run(arguments: #"{"query":"x"}"#)
