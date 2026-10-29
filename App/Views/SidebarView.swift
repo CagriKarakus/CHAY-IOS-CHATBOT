@@ -8,6 +8,7 @@ struct SidebarView<ChatMenu: View>: View {
     let openProjects: () -> Void
     let openProject: (ProjectRecord) -> Void
     let openDocuments: () -> Void
+    let openScheduled: () -> Void
     let search: () -> Void
     let openSettings: () -> Void
     let newChat: () -> Void
@@ -66,6 +67,7 @@ struct SidebarView<ChatMenu: View>: View {
                         }
                     }
                     navigationRow(L("Documents", "Dokümanlar"), systemImage: "doc.text", action: openDocuments)
+                    navigationRow(L("Scheduled", "Zamanlanmış görevler"), systemImage: "clock", action: openScheduled)
 
                     if !pinned.isEmpty {
                         sectionTitle(L("Pinned", "Sabitlenenler"))

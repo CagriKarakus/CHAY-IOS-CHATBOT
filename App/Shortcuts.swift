@@ -125,5 +125,11 @@ struct CHAYShortcuts: AppShortcutsProvider {
             shortTitle: "Ask CHAY",
             systemImageName: "sparkle"
         )
+        AppShortcut(
+            intent: RunScheduledTaskIntent(),
+            phrases: ["Run a \(.applicationName) task"],
+            shortTitle: "Run CHAY Task",
+            systemImageName: "clock"
+        )
     }
 }

@@ -1,6 +1,7 @@
 import SwiftData
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @main
 struct AIAssistantApp: App {
@@ -9,8 +10,14 @@ struct AIAssistantApp: App {
     @State private var speech = SpeechReader()
     @State private var skills = SkillLibrary()
     @State private var connectors = ConnectorLibrary()
+    @State private var scheduledTasks = ScheduledTaskLibrary()
     @State private var prompts = PromptLibrary()
     @AppStorage(Appearance.storageKey) private var appearance: Appearance = .system
+
+    init() {
+        // Zamanlanmış görev bildirimine dokununca görev çalışsın (uygulama kapalıyken de).
+        UNUserNotificationCenter.current().delegate = NotificationRouter.shared
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +27,7 @@ struct AIAssistantApp: App {
                 .environment(speech)
                 .environment(skills)
                 .environment(connectors)
+                .environment(scheduledTasks)
                 .environment(prompts)
                 .tint(Palette.blue)
                 .onAppear { apply(appearance) }

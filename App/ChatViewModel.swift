@@ -141,6 +141,8 @@ final class ChatViewModel {
     private var backgroundedDuringTurn = false
     /// Arka planda kesilen istek; uygulamaya dönülünce kendiliğinden yeniden denenir.
     private var resumeOnForeground = false
+    /// iOS 26+: cevap uygulamadan çıkılınca da sürsün diye açılan arka plan görevi.
+    private var continuedTurn: ContinuedTurn?
     private var lastSettings: AppSettings?
     var input = ""
     var errorMessage: String?
@@ -490,7 +492,10 @@ final class ChatViewModel {
         isInBackground = true
         if isStreaming {
             backgroundedDuringTurn = true
-            TurnNotifications.scheduleStillRunning()
+            // Devam eden arka plan görevi varsa iOS ilerlemeyi gösterir; "uygulamayı aç" uyarısı gerekmez.
+            if continuedTurn == nil {
+                TurnNotifications.scheduleStillRunning()
+            }
         }
     }
 
@@ -615,6 +620,7 @@ final class ChatViewModel {
         beginTurn(using: settings)
         let generator = ImageGenerator(configuration: configuration, transport: URLSessionTransport())
         let background = BackgroundActivity(name: "ImageGeneration")
+        continuedTurn = ContinuedTurn.start(title: title)
 
         turnTask = Task {
             var succeeded = false
@@ -642,6 +648,8 @@ final class ChatViewModel {
             turnTask = nil
             persist()
             endTurn()
+            continuedTurn?.finish(success: errorMessage == nil)
+            continuedTurn = nil
             background.end()
         }
     }
@@ -710,6 +718,7 @@ final class ChatViewModel {
 
         // Kullanıcı uygulamadan çıkarsa iOS'un verdiği ek sürede istek tamamlansın.
         let background = BackgroundActivity(name: "AgentTurn")
+        continuedTurn = ContinuedTurn.start(title: title)
 
         turnTask = Task {
             do {
@@ -757,6 +766,8 @@ final class ChatViewModel {
             turnTask = nil
             persist()
             endTurn()
+            continuedTurn?.finish(success: errorMessage == nil)
+            continuedTurn = nil
             background.end()
         }
     }
@@ -797,6 +808,7 @@ final class ChatViewModel {
             items[index].text += delta
             items[index].preparing = nil
             pendingStepText += delta
+            continuedTurn?.advance()
         case let .reasoning(thought):
             items[index].reasoning = (items[index].reasoning ?? "") + thought
         case let .preparingTool(name, characters):
@@ -812,6 +824,7 @@ final class ChatViewModel {
                 items[index].text += "\n\n"
             }
             items[index].activities.append(ToolActivity(id: callID, toolName: name, title: activityTitle(toolName: name, detail: detail)))
+            continuedTurn?.advance(activityTitle(toolName: name, detail: detail))
         case let .toolFinished(callID, sources, files, failed):
             if let activity = items[index].activities.firstIndex(where: { $0.id == callID }) {
                 items[index].activities[activity].state = failed ? .failed : .done

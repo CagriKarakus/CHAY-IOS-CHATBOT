@@ -48,7 +48,8 @@ Son sürüm **[v1.1](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 
 ### Günlük kullanım
 - **Kestirmeler**: *Ask CHAY* eylemi bir komutu (ve ekran görüntüsü gibi dosyaları) seçtiğin modelle gönderir; ör. her sabah 07:00'de haber özeti
-- **Arka plan**: cevap arka planda bir süre devam eder, uygulamaya dönünce kaldığı yerden sürer ve hazır olunca bildirim gönderir
+- **Zamanlanmış görevler**: komutları model, saat ve günlerle kaydet; o saatte gelen bildirime dokununca görev çalışır ya da *Run CHAY Task* eylemli bir Kestirmeler otomasyonu onu tamamen otomatik çalıştırır (uygulama adımları gösterir ve Kestirmeler'i açar)
+- **Arka plan**: iOS 26 ve sonrasında cevap uygulamadan çıkınca da sürer, ilerlemeyi iOS gösterir; eski sürümlerde bir süre devam eder, uygulamaya dönünce kaldığı yerden sürer ve hazır olunca bildirim gönderir
 - **Kullanım**: cevap başına token ve token/saniye, sağlayıcı ve model başına toplamlar, destekleyen sağlayıcılarda bakiye, servis başına arama sayısı
 - **Yedekleme**: her şeyi tek dosyaya dışa aktarıp geri yükleme (API key'ler, token'lar ve girişler asla dahil edilmez)
 

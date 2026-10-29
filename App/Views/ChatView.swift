@@ -6,7 +6,7 @@ import SwiftUI
 
 struct ChatView: View {
     private enum Route: Hashable {
-        case conversations, projects, documents
+        case conversations, projects, documents, scheduled
         case project(UUID)
     }
 
@@ -81,6 +81,7 @@ struct ChatView: View {
             openProjects: { show(.projects) },
             openProject: { show(.project($0.id)) },
             openDocuments: { show(.documents) },
+            openScheduled: { show(.scheduled) },
             search: { show(.conversations) },
             openSettings: {
                 showingSettings = true
@@ -217,6 +218,9 @@ struct ChatView: View {
                         }
                     )
                 case .documents: DocumentsView()
+                case .scheduled:
+                    // Kestirme isteğiyle aynı yoldan: yeni sohbet, görevin modeli.
+                    ScheduledTasksView(run: { ShortcutInbox.put($0.request) })
                 case let .project(id):
                     if let project = projects.first(where: { $0.id == id }) {
                         ProjectDetailView(

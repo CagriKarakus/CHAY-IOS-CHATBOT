@@ -39,6 +39,9 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # iOS 26+: uzun cevaplar uygulamadan çıkınca da sürsün (ContinuedTurn).
+        UIBackgroundModes: [processing]
+        BGTaskSchedulerPermittedIdentifiers: ["dev.cagri.aiassistant.turn.*"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.cagri.aiassistant

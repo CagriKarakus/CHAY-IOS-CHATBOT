@@ -48,7 +48,8 @@ The latest version is **[v1.1](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 
 ### Everyday use
 - **Shortcuts**: the *Ask CHAY* action sends a prompt (and files such as screenshots) with the model you choose, e.g. a daily news summary at 7:00
-- **Background handling**: a reply keeps running for a while in the background, resumes when you come back and sends a notification when it's ready
+- **Scheduled tasks**: save prompts with a model, time and days; a notification at that time runs the task with one tap, or a Shortcuts automation with the *Run CHAY Task* action runs it fully automatically (the app shows the steps and opens Shortcuts)
+- **Background handling**: on iOS 26 and later a reply keeps running after you leave the app, with progress shown by iOS; on older versions it continues for a while, resumes when you come back and sends a notification when it's ready
 - **Usage**: token usage and tokens/second per reply, totals per provider and model, provider balance where available, search counts per service
 - **Backup**: export everything to one file and import it back (API keys, tokens and sign-ins are never included)
 
