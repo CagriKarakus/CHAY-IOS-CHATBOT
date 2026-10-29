@@ -15,6 +15,15 @@ struct Backup: Codable {
         let createdAt: Date
         let updatedAt: Date
         let content: ConversationContent
+        var projectID: UUID?
+    }
+
+    struct StoredProject: Codable {
+        let id: UUID
+        let name: String
+        let instructions: String
+        let createdAt: Date
+        let files: [ProjectFile]
     }
 
     struct StoredDocument: Codable {
@@ -31,6 +40,8 @@ struct Backup: Codable {
     var skills: [InstalledSkill]
     var prompts: [SavedPrompt]
     var documents: [StoredDocument]
+    /// Eski yedeklerde yok.
+    var projects: [StoredProject]?
 }
 
 /// İçe aktarmada eklenenlerin sayısı.
@@ -41,6 +52,7 @@ struct ImportSummary {
     var prompts = 0
     var providers = 0
     var documents = 0
+    var projects = 0
 }
 
 @MainActor
@@ -57,11 +69,17 @@ enum BackupService {
             userInstructions: settings.userInstructions,
             notes: notes.map { Backup.StoredNote(content: $0.content, createdAt: $0.createdAt) },
             conversations: conversations.map {
-                Backup.StoredConversation(id: $0.id, title: $0.title, createdAt: $0.createdAt, updatedAt: $0.updatedAt, content: $0.content)
+                Backup.StoredConversation(
+                    id: $0.id, title: $0.title, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                    content: $0.content, projectID: $0.projectID
+                )
             },
             skills: skills.skills,
             prompts: prompts.prompts,
-            documents: documents
+            documents: documents,
+            projects: try context.fetch(FetchDescriptor<ProjectRecord>()).map {
+                Backup.StoredProject(id: $0.id, name: $0.name, instructions: $0.instructions, createdAt: $0.createdAt, files: $0.files)
+            }
         )
 
         let encoder = JSONEncoder()
@@ -97,9 +115,17 @@ enum BackupService {
                 title: conversation.title,
                 createdAt: conversation.createdAt,
                 updatedAt: conversation.updatedAt,
-                content: conversation.content
+                content: conversation.content,
+                projectID: conversation.projectID
             ))
             summary.conversations += 1
+        }
+
+        let existingProjects = Set(try context.fetch(FetchDescriptor<ProjectRecord>()).map(\.id))
+        for project in backup.projects ?? [] where !existingProjects.contains(project.id) {
+            context.insert(ProjectRecord(id: project.id, name: project.name, instructions: project.instructions,
+                                         createdAt: project.createdAt, files: project.files))
+            summary.projects += 1
         }
 
         let existingNotes = Set(try context.fetch(FetchDescriptor<NoteRecord>()).map { $0.content.lowercased() })

@@ -80,6 +80,9 @@ final class ChatViewModel {
     private(set) var conversationID: UUID?
     /// Gizli sohbet: kaydedilmez, hafıza okunmaz ve yazılmaz.
     private(set) var isIncognito = false
+    /// Sohbetin ait olduğu proje; talimatları ve dosyaları her istekte system prompt'a eklenir.
+    private(set) var projectID: UUID?
+    private(set) var projectName: String?
     /// Bu sohbette hafıza kullanılsın mı (sohbete özel).
     private(set) var memoryEnabled = true
     /// Bu sohbette seçili skill'ler; `nil` ise kütüphanedeki varsayılanlar.
@@ -162,7 +165,7 @@ final class ChatViewModel {
     }
 
     /// Ekranı ve geçmişi temizler; önceki sohbet kayıtlı kalır (gizli sohbet hiç kaydedilmez).
-    func startNewChat(incognito: Bool = false) {
+    func startNewChat(incognito: Bool = false, project: ProjectRecord? = nil) {
         guard !isStreaming else { return }
         if isIncognito {
             AttachmentFiles.delete(items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
@@ -174,6 +177,8 @@ final class ChatViewModel {
         conversationID = nil
         errorMessage = nil
         isIncognito = incognito
+        projectID = incognito ? nil : project?.id
+        projectName = incognito ? nil : project?.name
         memoryEnabled = true
         selectedSkillIDs = nil
         editingItemID = nil
@@ -271,6 +276,8 @@ final class ChatViewModel {
         memoryEnabled = content.memoryEnabled ?? true
         selectedSkillIDs = content.skillIDs.map(Set.init)
         conversationID = record.id
+        projectID = record.projectID
+        projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
         isIncognito = false
         errorMessage = nil
     }
@@ -414,6 +421,7 @@ final class ChatViewModel {
         let notes = SwiftDataNoteStore(context: context)
         let usesMemory = self.usesMemory
         let skills = skillLibrary?.active(in: selectedSkillIDs).map(\.skill) ?? []
+        let project = projectID.flatMap { ProjectRecord.find($0, in: context)?.context }
 
         let reply = ChatItem(role: .assistant, text: "")
         items.append(reply)
@@ -460,7 +468,8 @@ final class ChatViewModel {
                     summary: summary,
                     userInstructions: userInstructions,
                     memoryEnabled: usesMemory,
-                    skills: skills
+                    skills: skills,
+                    project: project
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 for try await event in agent.run(messages) {
@@ -572,6 +581,7 @@ final class ChatViewModel {
             record.update(content)
         } else {
             let record = ConversationRecord(content: content)
+            record.projectID = projectID
             context.insert(record)
             conversationID = record.id
         }

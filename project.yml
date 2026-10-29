@@ -12,6 +12,9 @@ packages:
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     from: 2.4.0
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.19
 
 targets:
   AIAssistant:
@@ -21,6 +24,7 @@ targets:
     dependencies:
       - package: AgentCore
       - package: MarkdownUI
+      - package: ZIPFoundation
     info:
       path: App/Info.plist
       properties:

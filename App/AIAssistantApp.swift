@@ -23,7 +23,7 @@ struct AIAssistantApp: App {
                 .onAppear { apply(appearance) }
                 .onChange(of: appearance) { apply(appearance) }
         }
-        .modelContainer(for: [NoteRecord.self, ConversationRecord.self])
+        .modelContainer(for: [NoteRecord.self, ConversationRecord.self, ProjectRecord.self])
     }
 
     /// Pencere düzeyinde uygulanır ki açık sayfalar (sheet) da hemen değişsin ve "Sistem"e dönüş çalışsın.

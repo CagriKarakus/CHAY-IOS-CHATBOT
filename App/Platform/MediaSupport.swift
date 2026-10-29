@@ -1,8 +1,11 @@
+import AgentCore
 import AVFoundation
 import Foundation
 import NaturalLanguage
 import Observation
 import PDFKit
+import UniformTypeIdentifiers
+import ZIPFoundation
 import UIKit
 
 /// Modele gönderilecek görseli küçültür (uzun kenar en fazla 1568 px, JPEG) ve küçük bir önizleme üretir.
@@ -174,14 +177,32 @@ func extractDocumentText(from url: URL) -> String? {
     let accessing = url.startAccessingSecurityScopedResource()
     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-    if url.pathExtension.lowercased() == "pdf" {
+    let fileExtension = url.pathExtension.lowercased()
+    if fileExtension == "pdf" {
         guard let document = PDFDocument(url: url) else { return nil }
         return (0..<document.pageCount)
             .compactMap { document.page(at: $0)?.string }
             .joined(separator: "\n\n")
     }
+    if let kind = OfficeText.Kind(rawValue: fileExtension) {
+        // docx/xlsx/pptx: ZIP arşivini aç, içteki XML'lerden metni çıkar.
+        guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+        let entries = archive.map(\.path)
+        return OfficeText.extract(kind: kind, entries: entries) { path in
+            guard let entry = archive[path] else { return nil }
+            var data = Data()
+            _ = try? archive.extract(entry, skipCRC32: true) { data.append($0) }
+            return data
+        }
+    }
     return try? String(contentsOf: url, encoding: .utf8)
 }
+
+/// Eklenebilen doküman türleri: PDF, düz metin ve Office (Word, Excel, PowerPoint).
+let documentContentTypes: [UTType] = [.pdf, .plainText, .text]
+    + ["org.openxmlformats.wordprocessingml.document",
+       "org.openxmlformats.spreadsheetml.sheet",
+       "org.openxmlformats.presentationml.presentation"].compactMap { UTType($0) }
 
 /// Üretilen görseli Documents klasörüne kaydeder (Dosyalar uygulamasında görünür); dosya adını döndürür.
 func saveGeneratedImage(_ data: Data) throws -> String {

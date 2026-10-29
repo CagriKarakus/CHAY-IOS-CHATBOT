@@ -14,7 +14,8 @@ public enum SystemPrompt {
         summary: String? = nil,
         userInstructions: String = "",
         memoryEnabled: Bool = true,
-        skills: [Skill] = []
+        skills: [Skill] = [],
+        project: ProjectContext? = nil
     ) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -46,6 +47,10 @@ public enum SystemPrompt {
         if memoryEnabled, !notes.isEmpty {
             prompt += "\n\nNotes about the user from your memory (take them into account):\n"
             prompt += notes.map { "- \($0.content)" }.joined(separator: "\n")
+        }
+
+        if let project {
+            prompt += "\n\n" + project.promptSection
         }
 
         if let summary, !summary.isEmpty {

@@ -6,7 +6,7 @@ import SwiftUI
 
 struct ChatView: View {
     private enum Route: Hashable {
-        case conversations, documents, notes
+        case conversations, projects, documents, notes
     }
 
     @Environment(AppSettings.self) private var settings
@@ -51,7 +51,7 @@ struct ChatView: View {
                 composer
             }
             .background(Palette.background)
-            .navigationTitle(viewModel.isIncognito ? L("Incognito Chat", "Gizli sohbet") : "CHAY")
+            .navigationTitle(viewModel.isIncognito ? L("Incognito Chat", "Gizli sohbet") : (viewModel.projectName ?? "CHAY"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -59,6 +59,7 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button(L("Chats", "Sohbetler"), systemImage: "bubble.left.and.bubble.right") { path.append(.conversations) }
+                        Button(L("Projects", "Projeler"), systemImage: "folder.badge.gearshape") { path.append(.projects) }
                         Button(L("Documents", "Dokümanlar"), systemImage: "folder") { path.append(.documents) }
                         Button(L("Memory", "Hafıza"), systemImage: "brain") { path.append(.notes) }
                         Button(L("Settings", "Ayarlar"), systemImage: "slider.horizontal.3") { showingSettings = true }
@@ -109,6 +110,17 @@ struct ChatView: View {
                         },
                         deletedCurrent: { viewModel.startNewChat() }
                     )
+                case .projects:
+                    ProjectsView(
+                        startChat: { project in
+                            viewModel.startNewChat(project: project)
+                            path = []
+                        },
+                        openChat: { record in
+                            viewModel.open(record)
+                            path = []
+                        }
+                    )
                 case .documents: DocumentsView()
                 case .notes: NotesView()
                 }
@@ -143,7 +155,7 @@ struct ChatView: View {
                 }
                 .ignoresSafeArea()
             }
-            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf, .plainText, .text]) { result in
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: documentContentTypes) { result in
                 guard case let .success(url) = result else { return }
                 guard let text = extractDocumentText(from: url) else {
                     viewModel.errorMessage = L("Couldn't read the file.", "Dosya okunamadı.")
@@ -360,7 +372,7 @@ struct ChatView: View {
                     }
                     Button(L("Photo", "Fotoğraf"), systemImage: "photo") { showingPhotoPicker = true }
                 }
-                Button(L("PDF or Text File", "PDF veya metin dosyası"), systemImage: "doc.text") { showingFileImporter = true }
+                Button(L("Document (PDF, Word, Excel…)", "Doküman (PDF, Word, Excel…)"), systemImage: "doc.text") { showingFileImporter = true }
                 if model?.acceptsAudio == true {
                     Button(L("Record Audio", "Ses kaydet"), systemImage: "mic") { startRecording() }
                 }

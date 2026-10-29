@@ -26,6 +26,8 @@ final class ConversationRecord {
     @Attribute(.externalStorage) var contentData: Data
     /// Aramada kullanılan, mesajların küçük harfli düz metni. Bu alan eklenmeden önce kaydedilen sohbetlerde boştur.
     var searchText: String = ""
+    /// Sohbetin ait olduğu proje (`ProjectRecord.id`); projesiz sohbetlerde `nil`.
+    var projectID: UUID?
 
     init(content: ConversationContent) {
         id = UUID()
@@ -37,8 +39,9 @@ final class ConversationRecord {
     }
 
     /// Yedekten geri yükleme için.
-    init(id: UUID, title: String, createdAt: Date, updatedAt: Date, content: ConversationContent) {
+    init(id: UUID, title: String, createdAt: Date, updatedAt: Date, content: ConversationContent, projectID: UUID? = nil) {
         self.id = id
+        self.projectID = projectID
         self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt

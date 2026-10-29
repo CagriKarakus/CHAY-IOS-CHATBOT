@@ -59,8 +59,8 @@ struct BackupView: View {
             do {
                 let summary = try BackupService.importBackup(from: url, context: context, settings: settings, skills: skills, prompts: prompts)
                 show(L(
-                    "Imported: \(summary.conversations) chats, \(summary.notes) notes, \(summary.skills) skills, \(summary.prompts) prompts, \(summary.documents) documents, \(summary.providers) providers.",
-                    "İçe aktarıldı: \(summary.conversations) sohbet, \(summary.notes) not, \(summary.skills) skill, \(summary.prompts) komut, \(summary.documents) doküman, \(summary.providers) sağlayıcı."
+                    "Imported: \(summary.projects) projects, \(summary.conversations) chats, \(summary.notes) notes, \(summary.skills) skills, \(summary.prompts) prompts, \(summary.documents) documents, \(summary.providers) providers.",
+                    "İçe aktarıldı: \(summary.projects) proje, \(summary.conversations) sohbet, \(summary.notes) not, \(summary.skills) skill, \(summary.prompts) komut, \(summary.documents) doküman, \(summary.providers) sağlayıcı."
                 ), failed: false)
             } catch {
                 show(L("This file isn't a valid backup.", "Bu dosya geçerli bir yedek değil."), failed: true)

@@ -154,3 +154,34 @@ func rejectsBadRepositoryNames(_ input: String) {
 
     #expect(ContextCompactor.estimatedTokens([ChatMessage(role: .user, content: "", attachments: [document])]) == 1_000)
 }
+
+// MARK: - Projeler
+
+@Test func systemPromptIncludesProject() {
+    let project = ProjectContext(
+        name: "Tez",
+        instructions: "  Akademik dil kullan.  ",
+        documents: [ProjectContext.Document(name: "taslak.md", text: "Giriş bölümü")]
+    )
+
+    let prompt = SystemPrompt.make(userInstructions: "Kısa yaz.", project: project)
+
+    #expect(prompt.contains("project \"Tez\""))
+    #expect(prompt.contains("Project instructions:\nAkademik dil kullan."))
+    #expect(prompt.contains("<document name=\"taslak.md\">\nGiriş bölümü\n</document>"))
+    #expect(prompt.hasSuffix("Kısa yaz."))
+}
+
+@Test func projectFilesRespectKnowledgeLimit() {
+    let limit = ProjectContext.knowledgeLimit
+    let project = ProjectContext(name: "P", instructions: "", documents: [
+        ProjectContext.Document(name: "big.txt", text: String(repeating: "a", count: limit + 10)),
+        ProjectContext.Document(name: "next.txt", text: "b"),
+    ])
+
+    let section = project.promptSection
+
+    #expect(section.contains(String(repeating: "a", count: limit) + "\n[…truncated]"))
+    #expect(!section.contains("<document name=\"next.txt\">"))
+    #expect(section.contains("too large: next.txt"))
+}
