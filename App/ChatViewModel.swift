@@ -269,6 +269,11 @@ final class ChatViewModel {
         }
     }
 
+    /// Bildirimde gösterilen sohbet başlığı.
+    var title: String {
+        ConversationRecord.title(for: ConversationContent(items: items, history: []))
+    }
+
     /// Açık sohbet bir projeye taşındı (veya çıkarıldı); talimatları sonraki istekten itibaren kullanılır.
     func setProject(_ project: ProjectRecord?) {
         projectID = project?.id
