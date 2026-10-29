@@ -8,6 +8,7 @@ struct AIAssistantApp: App {
     @State private var usage = UsageTracker()
     @State private var speech = SpeechReader()
     @State private var skills = SkillLibrary()
+    @State private var connectors = ConnectorLibrary()
     @State private var prompts = PromptLibrary()
     @AppStorage(Appearance.storageKey) private var appearance: Appearance = .system
 
@@ -18,6 +19,7 @@ struct AIAssistantApp: App {
                 .environment(usage)
                 .environment(speech)
                 .environment(skills)
+                .environment(connectors)
                 .environment(prompts)
                 .tint(Palette.blue)
                 .onAppear { apply(appearance) }

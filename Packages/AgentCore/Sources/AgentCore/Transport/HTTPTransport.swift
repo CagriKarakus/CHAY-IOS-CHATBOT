@@ -18,11 +18,18 @@ public struct HTTPResponse: Equatable, Sendable {
     public let statusCode: Int
     public let contentType: String?
     public let body: Data
+    /// Yanıt başlıkları; adlar küçük harfle.
+    public let headers: [String: String]
 
-    public init(statusCode: Int, contentType: String?, body: Data) {
+    public init(statusCode: Int, contentType: String?, body: Data, headers: [String: String] = [:]) {
         self.statusCode = statusCode
         self.contentType = contentType
         self.body = body
+        self.headers = Dictionary(headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    public func header(_ name: String) -> String? {
+        headers[name.lowercased()]
     }
 }
 

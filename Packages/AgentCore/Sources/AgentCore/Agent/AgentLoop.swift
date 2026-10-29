@@ -21,6 +21,8 @@ public struct ApprovalRequest: Equatable, Sendable {
     public let toolName: String
     /// Aracın ayrıntısı (örn. kaydedilecek not).
     public let detail: String?
+    /// Modelin araca verdiği argümanlar (JSON).
+    public var arguments: String? = nil
 }
 
 /// Model araç istedikçe araçları çalıştırıp sonucu geri veren döngü.
@@ -112,9 +114,14 @@ public struct AgentLoop: Sendable {
         let detail = tool.activityDetail(for: call.function.arguments)
         emit(.toolStarted(id: call.id, name: tool.name, detail: detail))
 
-        // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler kullanıcı onayı olmadan yapılmaz.
-        if tool.requiresApprovalAfterUntrustedContent, containsUntrustedContent(conversation) {
-            let approved = await approve(ApprovalRequest(toolName: tool.name, detail: detail))
+        // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler ve veri değiştiren bağlayıcı araçları
+        // kullanıcı onayı olmadan yapılmaz.
+        if tool.requiresApproval || (tool.requiresApprovalAfterUntrustedContent && containsUntrustedContent(conversation)) {
+            let approved = await approve(ApprovalRequest(
+                toolName: tool.name,
+                detail: detail,
+                arguments: tool.requiresApproval ? call.function.arguments : nil
+            ))
             try Task.checkCancellation()
             guard approved else {
                 emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))

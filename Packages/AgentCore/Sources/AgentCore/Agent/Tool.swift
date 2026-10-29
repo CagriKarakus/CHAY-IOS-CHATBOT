@@ -16,10 +16,14 @@ public protocol Tool: Sendable {
 
     /// Sohbette web içeriği okunduysa çalışmadan önce kullanıcı onayı gerekir mi.
     var requiresApprovalAfterUntrustedContent: Bool { get }
+
+    /// Her çalıştırmadan önce kullanıcı onayı gerekir mi (ör. veri değiştiren bağlayıcı araçları).
+    var requiresApproval: Bool { get }
 }
 
 extension Tool {
     public var requiresApprovalAfterUntrustedContent: Bool { false }
+    public var requiresApproval: Bool { false }
 }
 
 extension Tool {

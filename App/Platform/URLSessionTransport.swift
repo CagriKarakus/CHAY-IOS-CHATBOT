@@ -43,7 +43,11 @@ struct URLSessionTransport: HTTPTransport {
         return HTTPResponse(
             statusCode: http.statusCode,
             contentType: http.value(forHTTPHeaderField: "Content-Type"),
-            body: data
+            body: data,
+            headers: Dictionary(
+                http.allHeaderFields.compactMap { key, value in (key as? String).map { ($0, "\(value)") } },
+                uniquingKeysWith: { first, _ in first }
+            )
         )
     }
 

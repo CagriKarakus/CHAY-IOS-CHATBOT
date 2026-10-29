@@ -97,6 +97,8 @@ final class ChatViewModel {
     private(set) var memoryEnabled = true
     /// Bu sohbette seçili skill'ler; `nil` ise kütüphanedeki varsayılanlar.
     private(set) var selectedSkillIDs: Set<UUID>?
+    /// Bu sohbette seçili bağlayıcılar; `nil` ise varsayılan açık olanlar.
+    private(set) var selectedConnectorIDs: Set<UUID>?
     /// Düzenlenmekte olan kullanıcı mesajı; gönderilince o mesaj ve sonrası yeniden oluşturulur.
     private(set) var editingItemID: ChatItem.ID?
     /// Bu sohbete özel model (ör. kestirmenin seçtiği); `nil` ise Ayarlar'daki seçili model.
@@ -129,6 +131,7 @@ final class ChatViewModel {
     private var context: ModelContext?
     private var usageTracker: UsageTracker?
     private var skillLibrary: SkillLibrary?
+    private var connectorLibrary: ConnectorLibrary?
     /// Bu turdaki aramaların sayılacağı servis.
     private var currentModel: (providerID: UUID, name: String)?
 
@@ -179,10 +182,11 @@ final class ChatViewModel {
         !isStreaming && errorMessage != nil && history.last.map { $0.role == .user || $0.role == .tool } == true
     }
 
-    func attach(_ context: ModelContext, usage: UsageTracker, skills: SkillLibrary) {
+    func attach(_ context: ModelContext, usage: UsageTracker, skills: SkillLibrary, connectors: ConnectorLibrary) {
         self.context = context
         usageTracker = usage
         skillLibrary = skills
+        connectorLibrary = connectors
     }
 
     /// Ekranı ve geçmişi temizler; önceki sohbet kayıtlı kalır (gizli sohbet hiç kaydedilmez).
@@ -207,6 +211,7 @@ final class ChatViewModel {
         projectName = incognito ? nil : project?.name
         memoryEnabled = true
         selectedSkillIDs = nil
+        selectedConnectorIDs = nil
         editingItemID = nil
         modelOverrideID = modelOverride
     }
@@ -286,6 +291,18 @@ final class ChatViewModel {
         persist()
     }
 
+    func isConnectorActive(_ connector: Connector) -> Bool {
+        selectedConnectorIDs?.contains(connector.id) ?? connector.enabledByDefault
+    }
+
+    /// Bağlayıcıyı bu sohbette açar/kapatır; ilk değişiklikte varsayılanlar sohbete kopyalanır.
+    func setConnector(_ connector: Connector, active: Bool) {
+        var selection = selectedConnectorIDs ?? Set(connectorLibrary?.active(in: nil).map(\.id) ?? [])
+        if active { selection.insert(connector.id) } else { selection.remove(connector.id) }
+        selectedConnectorIDs = selection
+        persist()
+    }
+
     func open(_ record: ConversationRecord) {
         guard !isStreaming else { return }
         let content = record.content
@@ -302,6 +319,7 @@ final class ChatViewModel {
         lastPromptTokens = content.lastPromptTokens
         memoryEnabled = content.memoryEnabled ?? true
         selectedSkillIDs = content.skillIDs.map(Set.init)
+        selectedConnectorIDs = content.connectorIDs.map(Set.init)
         conversationID = record.id
         projectID = record.projectID
         projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
@@ -526,13 +544,8 @@ final class ChatViewModel {
         if !skills.isEmpty {
             tools.append(UseSkillTool(skills: skills))
         }
-        let agent = AgentLoop(
-            client: client,
-            tools: tools,
-            approve: { [weak self] request in
-                await self?.requestApproval(request) ?? false
-            }
-        )
+        let baseTools = tools
+        let connectorSelection = selectedConnectorIDs
         let userInstructions = settings.userInstructions
 
         // Eski turların okunmuş sayfaları ve arama sonuçları kısaltılır; asıl bilgi cevaplarda zaten var.
@@ -558,6 +571,15 @@ final class ChatViewModel {
                     project: project
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
+                // Bağlayıcı araçları; araç listesi hiç alınmamışsa önce sunucuya bağlanılır.
+                let connectorTools = await connectorLibrary?.tools(in: connectorSelection) ?? []
+                let agent = AgentLoop(
+                    client: client,
+                    tools: baseTools + connectorTools,
+                    approve: { [weak self] request in
+                        await self?.requestApproval(request) ?? false
+                    }
+                )
                 for try await event in agent.run(messages) {
                     apply(event, to: reply.id)
                 }
@@ -670,7 +692,8 @@ final class ChatViewModel {
             lastPromptTokens: lastPromptTokens,
             memoryEnabled: memoryEnabled,
             skillIDs: selectedSkillIDs.map(Array.init),
-            modelID: modelOverrideID
+            modelID: modelOverrideID,
+            connectorIDs: selectedConnectorIDs.map(Array.init)
         )
 
         if let conversationID,

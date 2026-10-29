@@ -12,6 +12,7 @@ struct ChatView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(UsageTracker.self) private var usage
     @Environment(SkillLibrary.self) private var skills
+    @Environment(ConnectorLibrary.self) private var connectors
     @Environment(PromptLibrary.self) private var prompts
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -127,20 +128,30 @@ struct ChatView: View {
                 }
             }
             .alert(
-                L("Save to memory?", "Hafızaya kaydedilsin mi?"),
+                viewModel.pendingApproval?.request.toolName == "save_note"
+                    ? L("Save to memory?", "Hafızaya kaydedilsin mi?")
+                    : L("Allow this action?", "Bu işleme izin verilsin mi?"),
                 isPresented: Binding(
                     get: { viewModel.pendingApproval != nil },
                     set: { if !$0 { viewModel.resolveApproval(false) } }
                 ),
                 presenting: viewModel.pendingApproval
-            ) { _ in
+            ) { pending in
+                let isNote = pending.request.toolName == "save_note"
                 Button(L("Decline", "Reddet"), role: .cancel) { viewModel.resolveApproval(false) }
-                Button(L("Save", "Kaydet")) { viewModel.resolveApproval(true) }
+                Button(isNote ? L("Save", "Kaydet") : L("Allow", "İzin ver")) { viewModel.resolveApproval(true) }
             } message: { pending in
-                Text(L(
-                    "The assistant read web content in this chat and wants to save:\n\n\(pending.request.detail ?? "")",
-                    "Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.detail ?? "")"
-                ))
+                if pending.request.toolName == "save_note" {
+                    Text(L(
+                        "The assistant read web content in this chat and wants to save:\n\n\(pending.request.detail ?? "")",
+                        "Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.detail ?? "")"
+                    ))
+                } else {
+                    Text(L(
+                        "The assistant wants to run a tool that can change data:\n\n\(pending.request.detail ?? pending.request.toolName)\n\n\(approvalArguments(pending.request.arguments))",
+                        "Asistan veri değiştirebilen bir araç çalıştırmak istiyor:\n\n\(pending.request.detail ?? pending.request.toolName)\n\n\(approvalArguments(pending.request.arguments))"
+                    ))
+                }
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
@@ -189,7 +200,7 @@ struct ChatView: View {
                 }
             }
             .onAppear {
-                viewModel.attach(modelContext, usage: usage, skills: skills)
+                viewModel.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
                 if !settings.isConfigured {
                     showingSettings = true
                 }
@@ -214,7 +225,7 @@ struct ChatView: View {
     private func runShortcutRequest() {
         guard !viewModel.isStreaming, let request = ShortcutInbox.take() else { return }
         // Bildirim ekran ilk kez görünmeden gelebilir; bağlam hazır olsun.
-        viewModel.attach(modelContext, usage: usage, skills: skills)
+        viewModel.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
         path = []
         // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
         viewModel.startNewChat(modelOverride: request.modelID)
@@ -466,6 +477,24 @@ struct ChatView: View {
                     } label: {
                         let active = skills.skills.filter(viewModel.isSkillActive).count
                         Label(L("Skills (\(active) on)", "Skill'ler (\(active) açık)"), systemImage: "sparkles")
+                    }
+                }
+                if !connectors.connectors.isEmpty {
+                    Menu {
+                        ForEach(connectors.connectors) { connector in
+                            Toggle(isOn: Binding(
+                                get: { viewModel.isConnectorActive(connector) },
+                                set: { viewModel.setConnector(connector, active: $0) }
+                            )) {
+                                Text(connector.name)
+                                if connectors.needsSignIn.contains(connector.id) {
+                                    Text(L("Sign in required", "Giriş gerekiyor"))
+                                }
+                            }
+                        }
+                    } label: {
+                        let active = connectors.connectors.filter(viewModel.isConnectorActive).count
+                        Label(L("Connectors (\(active) on)", "Bağlayıcılar (\(active) açık)"), systemImage: "point.3.connected.trianglepath.dotted")
                     }
                 }
             }
@@ -737,4 +766,15 @@ private struct RegenerateMenu: View {
         }
         .accessibilityLabel(L("Regenerate", "Yeniden üret"))
     }
+}
+
+/// Onay penceresinde araç argümanları: düzenli JSON, en fazla 600 karakter.
+private func approvalArguments(_ arguments: String?) -> String {
+    guard let arguments, !arguments.isEmpty else { return "" }
+    var text = arguments
+    if let object = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)),
+       let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) {
+        text = String(decoding: data, as: UTF8.self)
+    }
+    return text.count > 600 ? String(text.prefix(600)) + "…" : text
 }

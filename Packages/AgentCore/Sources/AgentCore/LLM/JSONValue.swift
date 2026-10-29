@@ -1,5 +1,5 @@
-/// Araç parametre şemalarını Swift literal'leriyle yazmak için JSON değeri.
-public enum JSONValue: Encodable, Equatable, Sendable {
+/// Araç parametre şemalarını Swift literal'leriyle yazmak için JSON değeri (MCP şemaları için okunabilir de).
+public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -16,6 +16,23 @@ public enum JSONValue: Encodable, Equatable, Sendable {
         case let .array(value): try container.encode(value)
         case let .object(value): try container.encode(value)
         case .null: try container.encodeNil()
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: JSONValue].self))
         }
     }
 }

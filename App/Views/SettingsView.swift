@@ -62,6 +62,12 @@ struct SettingsView: View {
                             .foregroundStyle(Palette.textBright)
                     }
                     NavigationLink {
+                        ConnectorsView()
+                    } label: {
+                        Label(L("Connectors", "Bağlayıcılar"), systemImage: "point.3.connected.trianglepath.dotted")
+                            .foregroundStyle(Palette.textBright)
+                    }
+                    NavigationLink {
                         PromptsView()
                     } label: {
                         Label(L("Prompts", "Hazır komutlar"), systemImage: "text.badge.star")
