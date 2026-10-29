@@ -33,12 +33,22 @@ final class ContinuedTurn {
             return nil
         }
         let turn = ContinuedTurn()
-        let identifier = prefix + UUID().uuidString
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
-            MainActor.assumeIsolated { turn.attach(task) }
+        let bundleID = Bundle.main.bundleIdentifier ?? "?"
+        // Yükleme aracı uygulamanın kimliğini değiştirdiyse (ör. sonuna ekleme) görev adı da ona göre denenir.
+        let prefixes = [prefix, bundleID + ".turn."].reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        var identifier: String?
+        for candidate in prefixes.map({ $0 + UUID().uuidString }) {
+            let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: candidate, using: .main) { task in
+                MainActor.assumeIsolated { turn.attach(task) }
+            }
+            if registered {
+                identifier = candidate
+                break
+            }
         }
-        guard registered else {
-            record(L("iOS refused to register the task", "iOS görevi kaydetmeyi reddetti"))
+        guard let identifier else {
+            record(L("iOS refused to register the task (app ID: \(bundleID))",
+                     "iOS görevi kaydetmeyi reddetti (uygulama kimliği: \(bundleID))"))
             return nil
         }
         let request = BGContinuedProcessingTaskRequest(
