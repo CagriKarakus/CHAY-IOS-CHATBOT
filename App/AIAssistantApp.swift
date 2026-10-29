@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 @main
 struct AIAssistantApp: App {
@@ -8,6 +9,7 @@ struct AIAssistantApp: App {
     @State private var speech = SpeechReader()
     @State private var skills = SkillLibrary()
     @State private var prompts = PromptLibrary()
+    @AppStorage(Appearance.storageKey) private var appearance: Appearance = .system
 
     var body: some Scene {
         WindowGroup {
@@ -17,9 +19,22 @@ struct AIAssistantApp: App {
                 .environment(speech)
                 .environment(skills)
                 .environment(prompts)
-                .preferredColorScheme(.dark)
                 .tint(Palette.blue)
+                .onAppear { apply(appearance) }
+                .onChange(of: appearance) { apply(appearance) }
         }
         .modelContainer(for: [NoteRecord.self, ConversationRecord.self])
+    }
+
+    /// Pencere düzeyinde uygulanır ki açık sayfalar (sheet) da hemen değişsin ve "Sistem"e dönüş çalışsın.
+    private func apply(_ appearance: Appearance) {
+        let style: UIUserInterfaceStyle = switch appearance {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+        for scene in UIApplication.shared.connectedScenes {
+            (scene as? UIWindowScene)?.windows.forEach { $0.overrideUserInterfaceStyle = style }
+        }
     }
 }

@@ -8,6 +8,8 @@ struct Provider: Codable, Identifiable, Hashable {
     var name: String
     var baseURL: String
     var models: [ModelProfile]
+    /// Başlangıçta seçilen hazır ayar (`ProviderPreset.id`); bakiye gösterimi gibi sağlayıcıya özel işler için.
+    var preset: String?
 }
 
 struct ModelProfile: Codable, Identifiable, Hashable {
@@ -40,6 +42,8 @@ final class AppSettings {
         static let userInstructions = "user.instructions"
 
         static func apiKey(_ provider: UUID) -> String { "provider.\(provider.uuidString).apiKey" }
+        /// Ek HTTP başlıkları gizli değer içerebileceği için Keychain'de (JSON).
+        static func headers(_ provider: UUID) -> String { "provider.\(provider.uuidString).headers" }
 
         // Tek sağlayıcılı eski sürümün anahtarları (taşıma için).
         static let legacyBaseURL = "llm.baseURL"
@@ -53,6 +57,7 @@ final class AppSettings {
     /// Her sohbette system prompt'a eklenen kişisel talimatlar (örn. "emoji kullanma").
     private(set) var userInstructions: String
     private var apiKeys: [UUID: String] = [:]
+    private var extraHeaders: [UUID: [String: String]] = [:]
 
     init() {
         let defaults = UserDefaults.standard
@@ -68,6 +73,8 @@ final class AppSettings {
         }
         for provider in providers {
             apiKeys[provider.id] = Keychain.read(Keys.apiKey(provider.id)) ?? ""
+            extraHeaders[provider.id] = Keychain.read(Keys.headers(provider.id))
+                .flatMap { try? JSONDecoder().decode([String: String].self, from: Data($0.utf8)) } ?? [:]
         }
     }
 
@@ -89,8 +96,13 @@ final class AppSettings {
             baseURL: selected.provider.baseURL,
             apiKey: apiKey(for: selected.provider.id),
             model: selected.model.name,
-            reasoningEffort: selected.model.supportsEffort ? selected.model.effort : nil
+            reasoningEffort: selected.model.supportsEffort ? selected.model.effort : nil,
+            extraHeaders: headers(for: selected.provider.id)
         )
+    }
+
+    func headers(for providerID: UUID) -> [String: String] {
+        extraHeaders[providerID] ?? [:]
     }
 
     func apiKey(for providerID: UUID) -> String {
@@ -114,7 +126,7 @@ final class AppSettings {
     // MARK: - Düzenleme
 
     /// Sağlayıcıyı doğrulayıp ekler veya günceller.
-    func save(_ provider: Provider, apiKey: String) throws {
+    func save(_ provider: Provider, apiKey: String, headers: [String: String] = [:]) throws {
         var provider = provider
         let url = try LLMConfiguration.validatedBaseURL(provider.baseURL)
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -139,6 +151,15 @@ final class AppSettings {
         }
         apiKeys[provider.id] = key
         Keychain.save(key, for: Keys.apiKey(provider.id))
+        let cleanedHeaders = headers.filter {
+            !$0.key.trimmingCharacters(in: .whitespaces).isEmpty && !$0.value.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        extraHeaders[provider.id] = cleanedHeaders
+        if cleanedHeaders.isEmpty {
+            Keychain.delete(Keys.headers(provider.id))
+        } else if let data = try? JSONEncoder().encode(cleanedHeaders) {
+            Keychain.save(String(decoding: data, as: UTF8.self), for: Keys.headers(provider.id))
+        }
         persistProviders()
 
         if selected?.model.id != selectedModelID, let first = selected?.model.id {
@@ -150,6 +171,8 @@ final class AppSettings {
         providers.removeAll { $0.id == id }
         apiKeys[id] = nil
         Keychain.delete(Keys.apiKey(id))
+        Keychain.delete(Keys.headers(id))
+        extraHeaders[id] = nil
         persistProviders()
     }
 

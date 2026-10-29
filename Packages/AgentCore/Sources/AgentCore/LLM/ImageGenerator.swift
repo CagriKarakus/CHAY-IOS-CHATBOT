@@ -29,10 +29,10 @@ public struct ImageGenerator: Sendable {
         let response = try await transport.send(HTTPRequest(
             url: configuration.baseURL.appendingPathComponent("images/generations"),
             method: "POST",
-            headers: [
+            headers: configuration.headers([
                 "Authorization": "Bearer \(configuration.apiKey)",
                 "Content-Type": "application/json",
-            ],
+            ]),
             body: try JSONEncoder().encode(Request(model: configuration.model, prompt: prompt))
         ))
         guard (200..<300).contains(response.statusCode) else {

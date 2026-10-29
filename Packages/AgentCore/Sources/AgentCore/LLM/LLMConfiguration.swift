@@ -12,9 +12,17 @@ public struct LLMConfiguration: Equatable, Sendable {
     public let model: String
     /// `nil` ise istekte gönderilmez (modelin varsayılanı).
     public let reasoningEffort: ReasoningEffort?
+    /// Bazı gateway'lerin istediği ek HTTP başlıkları (ör. Portkey: `x-portkey-api-key`).
+    public let extraHeaders: [String: String]
 
     /// Değerleri temizler ve doğrular. Sadece HTTPS kabul edilir.
-    public init(baseURL: String, apiKey: String, model: String, reasoningEffort: ReasoningEffort? = nil) throws {
+    public init(
+        baseURL: String,
+        apiKey: String,
+        model: String,
+        reasoningEffort: ReasoningEffort? = nil,
+        extraHeaders: [String: String] = [:]
+    ) throws {
         let url = try Self.validatedBaseURL(baseURL)
 
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,6 +35,25 @@ public struct LLMConfiguration: Equatable, Sendable {
         self.apiKey = trimmedKey
         self.model = trimmedModel
         self.reasoningEffort = reasoningEffort
+        self.extraHeaders = Self.cleaned(extraHeaders)
+    }
+
+    /// Boş adları/değerleri atar; Authorization ve Content-Type gibi temel başlıklar ezilemez.
+    static func cleaned(_ headers: [String: String]) -> [String: String] {
+        let reserved: Set<String> = ["authorization", "content-type", "accept"]
+        var result: [String: String] = [:]
+        for (name, value) in headers {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !value.isEmpty, !reserved.contains(name.lowercased()) else { continue }
+            result[name] = value
+        }
+        return result
+    }
+
+    /// İstek başlıkları: verilen temel başlıklar + ek başlıklar.
+    func headers(_ base: [String: String]) -> [String: String] {
+        base.merging(extraHeaders) { current, _ in current }
     }
 
     /// Base URL'i temizler; https ve host yoksa `LLMError.invalidBaseURL`.

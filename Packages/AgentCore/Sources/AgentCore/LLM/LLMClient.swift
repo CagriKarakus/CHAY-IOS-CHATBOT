@@ -35,7 +35,12 @@ public struct LLMClient: Sendable {
     }
 
     /// Endpoint'in sunduğu modelleri (`GET /models`) ada göre sıralı döndürür; sunucu bildirirse yetenekleriyle.
-    public static func listModels(baseURL: String, apiKey: String, transport: any HTTPTransport) async throws -> [ModelInfo] {
+    public static func listModels(
+        baseURL: String,
+        apiKey: String,
+        extraHeaders: [String: String] = [:],
+        transport: any HTTPTransport
+    ) async throws -> [ModelInfo] {
         let url = try LLMConfiguration.validatedBaseURL(baseURL)
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw LLMError.missingAPIKey }
@@ -43,7 +48,7 @@ public struct LLMClient: Sendable {
         let response = try await transport.send(HTTPRequest(
             url: url.appendingPathComponent("models"),
             method: "GET",
-            headers: ["Authorization": "Bearer \(key)"],
+            headers: ["Authorization": "Bearer \(key)"].merging(LLMConfiguration.cleaned(extraHeaders)) { current, _ in current },
             body: nil
         ))
         guard (200..<300).contains(response.statusCode) else {
@@ -68,11 +73,11 @@ public struct LLMClient: Sendable {
         return HTTPRequest(
             url: configuration.baseURL.appendingPathComponent("chat/completions"),
             method: "POST",
-            headers: [
+            headers: configuration.headers([
                 "Authorization": "Bearer \(configuration.apiKey)",
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
-            ],
+            ]),
             body: body
         )
     }
@@ -145,10 +150,11 @@ public struct LLMClient: Sendable {
         return redacted(message)
     }
 
-    /// Mesajda API key geçiyorsa gizler.
+    /// Mesajda API key veya ek başlık değerleri geçiyorsa gizler.
     private func redacted(_ message: String) -> String? {
-        let text = message
-            .replacingOccurrences(of: configuration.apiKey, with: "***")
+        let secrets = [configuration.apiKey] + configuration.extraHeaders.values.filter { $0.count >= 6 }
+        let text = secrets
+            .reduce(message) { $0.replacingOccurrences(of: $1, with: "***") }
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }

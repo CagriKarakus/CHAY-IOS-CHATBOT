@@ -16,9 +16,36 @@ struct ProviderEditorView: View {
     @State private var isFetching = false
     @State private var fetchedModels: FetchedModels?
     @State private var confirmingDelete = false
+    /// Ek HTTP başlıkları (ad, değer); sıralı düzenleme için dizi.
+    @State private var headers: [HeaderField] = []
+
+    private var selectedPreset: ProviderPreset? {
+        ProviderPreset.preset(id: draft.preset)
+    }
 
     var body: some View {
         Form {
+            if provider == nil {
+                Section {
+                    Menu {
+                        presetSection(L("Routers", "Router'lar"), .router)
+                        presetSection(L("Providers", "Sağlayıcılar"), .provider)
+                        presetSection(L("Self-hosted", "Kendi sunucunda"), .selfHosted)
+                    } label: {
+                        HStack {
+                            Label(selectedPreset?.name ?? L("Choose a preset", "Hazır ayar seç"), systemImage: "list.bullet.rectangle")
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(Palette.textMuted)
+                        }
+                    }
+                } footer: {
+                    footer(presetNote)
+                }
+                .listRowBackground(Palette.surface)
+            }
+
             Section {
                 TextField(L("Name", "Ad"), text: $draft.name, prompt: prompt(L("Name (e.g. Evren)", "Ad (örn. Evren)")))
                 TextField("Base URL", text: $draft.baseURL, prompt: prompt("https://router.example.com/v1"))
@@ -29,6 +56,28 @@ struct ProviderEditorView: View {
                 header(L("Connection", "Bağlantı"))
             } footer: {
                 footer(L("Address of the OpenAI-compatible endpoint, including /v1. HTTPS only. The key is stored only in this device's Keychain.", "OpenAI-uyumlu endpoint'in /v1 dahil adresi. Sadece HTTPS. Key yalnızca bu cihazın Keychain'inde saklanır."))
+            }
+            .listRowBackground(Palette.surface)
+
+            Section {
+                ForEach($headers) { $field in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField(L("Header name", "Başlık adı"), text: $field.name, prompt: prompt("x-header-name"))
+                            .font(.footnote.monospaced())
+                        SecureField(L("Value", "Değer"), text: $field.value, prompt: prompt(L("Value", "Değer")))
+                    }
+                }
+                .onDelete { headers.remove(atOffsets: $0) }
+                Button {
+                    headers.append(HeaderField(name: "", value: ""))
+                } label: {
+                    Label(L("Add Header", "Başlık ekle"), systemImage: "plus")
+                }
+            } header: {
+                header(L("Extra headers (optional)", "Ek başlıklar (isteğe bağlı)"))
+            } footer: {
+                footer(L("Some gateways need extra HTTP headers (e.g. Portkey's x-portkey-api-key). Values are stored in the Keychain.",
+                         "Bazı gateway'ler ek HTTP başlıkları ister (örn. Portkey'in x-portkey-api-key'i). Değerler Keychain'de saklanır."))
             }
             .listRowBackground(Palette.surface)
 
@@ -123,6 +172,9 @@ struct ProviderEditorView: View {
             if let provider {
                 draft = provider
                 apiKey = settings.apiKey(for: provider.id)
+                headers = settings.headers(for: provider.id)
+                    .sorted { $0.key < $1.key }
+                    .map { HeaderField(name: $0.key, value: $0.value) }
             }
         }
     }
@@ -140,7 +192,12 @@ struct ProviderEditorView: View {
         Task {
             defer { isFetching = false }
             do {
-                let models = try await LLMClient.listModels(baseURL: draft.baseURL, apiKey: apiKey, transport: URLSessionTransport())
+                let models = try await LLMClient.listModels(
+                    baseURL: draft.baseURL,
+                    apiKey: apiKey,
+                    extraHeaders: headerDictionary,
+                    transport: URLSessionTransport()
+                )
                 // Zaten ekli modellerin, sunucunun bildirdiği ama henüz ayarlanmamış yeteneklerini doldur.
                 for index in draft.models.indices {
                     if let info = models.first(where: { $0.id == draft.models[index].name }) {
@@ -160,10 +217,70 @@ struct ProviderEditorView: View {
 
     private func save() {
         do {
-            try settings.save(draft, apiKey: apiKey)
+            try settings.save(draft, apiKey: apiKey, headers: headerDictionary)
             dismiss()
         } catch {
             errorMessage = userFacingMessage(for: error)
+        }
+    }
+}
+
+private struct HeaderField: Identifiable {
+    let id = UUID()
+    var name: String
+    var value: String
+}
+
+private extension ProviderEditorView {
+    var headerDictionary: [String: String] {
+        Dictionary(headers.map { ($0.name, $0.value) }, uniquingKeysWith: { _, last in last })
+    }
+
+    @ViewBuilder
+    func presetSection(_ title: String, _ category: ProviderPreset.Category) -> some View {
+        Section(title) {
+            ForEach(ProviderPreset.all.filter { $0.category == category }) { preset in
+                Button(preset.name) { apply(preset) }
+            }
+        }
+    }
+
+    /// Hazır ayarı forma uygular; kullanıcı yine de her alanı değiştirebilir.
+    func apply(_ preset: ProviderPreset) {
+        draft.preset = preset.id
+        draft.name = preset.name
+        draft.baseURL = preset.baseURL
+        let existing = Set(headers.map(\.name))
+        headers += preset.headerNames.filter { !existing.contains($0) }.map { HeaderField(name: $0, value: "") }
+    }
+
+    var presetNote: String {
+        guard let preset = selectedPreset else {
+            return L("Fills in the address for well-known routers and providers. All of them must offer an OpenAI-compatible endpoint.",
+                     "Bilinen router ve sağlayıcıların adresini doldurur. Hepsi OpenAI-uyumlu bir endpoint sunar.")
+        }
+        switch preset.id {
+        case "portkey":
+            return L("Enter your Portkey key in x-portkey-api-key and the provider (e.g. openai) in x-portkey-provider; the API key field is that provider's key.",
+                     "Portkey key'ini x-portkey-api-key'e, sağlayıcıyı (örn. openai) x-portkey-provider'a yaz; API key alanı o sağlayıcının key'i.")
+        case "cloudflare":
+            return L("Replace {account_id} and {gateway_id} with your Cloudflare account and gateway. Use provider/model names like openai/gpt-4o-mini.",
+                     "{account_id} ve {gateway_id} kısımlarını Cloudflare hesabın ve gateway'inle değiştir. Model adlarını openai/gpt-4o-mini gibi yaz.")
+        case "truefoundry":
+            return L("Copy the OpenAI-compatible base URL from your TrueFoundry gateway settings.",
+                     "TrueFoundry gateway ayarlarından OpenAI-uyumlu base URL'i kopyala.")
+        case "anthropic":
+            return L("Uses Anthropic's OpenAI compatibility layer; some features may be limited.",
+                     "Anthropic'in OpenAI uyumluluk katmanını kullanır; bazı özellikler sınırlı olabilir.")
+        case "gemini":
+            return L("Uses a Gemini API key from Google AI Studio (Vertex AI needs short-lived tokens and isn't supported).",
+                     "Google AI Studio'dan alınan Gemini API key'i kullanılır (Vertex AI kısa ömürlü token istediği için desteklenmez).")
+        case "litellm", "routellm", "bifrost":
+            return L("Replace the placeholder with your server's address. The app only connects over HTTPS.",
+                     "Yer tutucuyu kendi sunucunun adresiyle değiştir. Uygulama sadece HTTPS ile bağlanır.")
+        default:
+            return L("After saving, use “Fetch Models from Server” to add models.",
+                     "Kaydettikten sonra modelleri eklemek için “Sunucudan modelleri getir”i kullan.")
         }
     }
 }

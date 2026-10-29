@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var language = AppLanguage.stored
     /// Ekran açıldığındaki seçim; değişirse yeniden başlatma uyarısı gösterilir.
     @State private var initialLanguage = AppLanguage.stored
+    @AppStorage(Appearance.storageKey) private var appearance: Appearance = .system
 
     var body: some View {
         NavigationStack {
@@ -69,6 +70,21 @@ struct SettingsView: View {
                         Label(L("Backup", "Yedekleme"), systemImage: "externaldrive")
                             .foregroundStyle(Palette.textBright)
                     }
+                }
+                .listRowBackground(Palette.surface)
+
+                Section {
+                    Picker(L("Appearance", "Görünüm"), selection: $appearance) {
+                        ForEach(Appearance.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .foregroundStyle(Palette.textBright)
+                } header: {
+                    header(L("Appearance", "Görünüm"))
+                } footer: {
+                    footer(L("Light uses Atom One Light, dark uses Atom One Dark. System follows your iPhone.",
+                             "Açık modda Atom One Light, koyu modda Atom One Dark kullanılır. Sistem, iPhone'unun ayarını izler."))
                 }
                 .listRowBackground(Palette.surface)
 
