@@ -71,6 +71,31 @@ final class SendRecorder: HTTPTransport, @unchecked Sendable {
     }
 }
 
+// MARK: - Tavily hesap kullanımı
+
+@Test func fetchesTavilyAccountUsage() async throws {
+    let json = #"{"key":{"usage":150,"limit":null,"search_usage":100},"account":{"current_plan":"Researcher","plan_usage":500,"plan_limit":1000,"paygo_usage":0,"paygo_limit":100}}"#
+    let transport = SendRecorder(json: json)
+
+    let usage = try await TavilyUsage.fetch(apiKey: " tvly-k ", transport: transport)
+
+    #expect(usage.key == TavilyUsage.Key(usage: 150, limit: nil))
+    #expect(usage.account?.currentPlan == "Researcher")
+    #expect(usage.account?.planUsage == 500)
+    #expect(usage.account?.planLimit == 1000)
+    #expect(transport.requests.first?.url.absoluteString == "https://api.tavily.com/usage")
+    #expect(transport.requests.first?.headers["Authorization"] == "Bearer tvly-k")
+}
+
+@Test func tavilyUsageErrors() async throws {
+    await #expect(throws: ToolError.missingAPIKey(service: "Tavily")) {
+        try await TavilyUsage.fetch(apiKey: "", transport: SendRecorder(json: "{}"))
+    }
+    await #expect(throws: ToolError.http(status: 401)) {
+        try await TavilyUsage.fetch(apiKey: "k", transport: SendRecorder(status: 401, json: "{}"))
+    }
+}
+
 // MARK: - Uyarlanabilir arama
 
 @Test(arguments: [
