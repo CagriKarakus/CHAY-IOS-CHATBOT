@@ -10,18 +10,22 @@ final class AppSettings {
         static let model = "llm.model"
         static let apiKey = "llm.apiKey"
         static let tavilyKey = "tavily.apiKey"
+        static let userInstructions = "user.instructions"
     }
 
     private(set) var baseURL: String
     private(set) var model: String
     private(set) var apiKey: String
     private(set) var tavilyKey: String
+    /// Her sohbette system prompt'a eklenen kişisel talimatlar (örn. "emoji kullanma").
+    private(set) var userInstructions: String
 
     init() {
         baseURL = UserDefaults.standard.string(forKey: Keys.baseURL) ?? ""
         model = UserDefaults.standard.string(forKey: Keys.model) ?? ""
         apiKey = Keychain.read(Keys.apiKey) ?? ""
         tavilyKey = Keychain.read(Keys.tavilyKey) ?? ""
+        userInstructions = UserDefaults.standard.string(forKey: Keys.userInstructions) ?? ""
     }
 
     var isConfigured: Bool {
@@ -32,8 +36,11 @@ final class AppSettings {
         try LLMConfiguration(baseURL: baseURL, apiKey: apiKey, model: model)
     }
 
-    /// Doğrulanmış LLM ayarlarını ve (isteğe bağlı) Tavily key'ini kaydeder.
-    func save(_ configuration: LLMConfiguration, tavilyKey: String) {
+    /// Doğrulanmış LLM ayarlarını, (isteğe bağlı) Tavily key'ini ve kişisel talimatları kaydeder.
+    func save(_ configuration: LLMConfiguration, tavilyKey: String, userInstructions: String) {
+        self.userInstructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(self.userInstructions, forKey: Keys.userInstructions)
+
         baseURL = configuration.baseURL.absoluteString
         model = configuration.model
         apiKey = configuration.apiKey

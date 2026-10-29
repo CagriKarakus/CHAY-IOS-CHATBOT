@@ -9,7 +9,7 @@ struct AIAssistantApp: App {
             ChatView()
                 .environment(settings)
                 .preferredColorScheme(.dark)
-                .tint(Theme.blue)
+                .tint(Palette.blue)
         }
     }
 }

@@ -30,7 +30,7 @@ private struct EchoTool: Tool {
     #expect(events == [
         .message(ChatMessage(role: .assistant, content: nil, toolCalls: [call])),
         .toolStarted(id: "c1", name: "echo", activity: #"Echo: {"x":1}"#),
-        .toolFinished(id: "c1", sources: [Source(title: "Kaynak", url: URL(string: "https://a.com")!)], failed: false),
+        .toolFinished(id: "c1", sources: [Source(title: "Kaynak", url: URL(string: "https://a.com")!)], files: [], failed: false),
         .message(ChatMessage(role: .tool, content: #"echo {"x":1}"#, toolCallID: "c1")),
         .text("Bitti"),
         .message(ChatMessage(role: .assistant, content: "Bitti")),
@@ -64,7 +64,7 @@ private struct EchoTool: Tool {
 
     let events = try await collect(loop.run([]))
 
-    #expect(events.contains(.toolFinished(id: "c1", sources: [], failed: true)))
+    #expect(events.contains(.toolFinished(id: "c1", sources: [], files: [], failed: true)))
     #expect(events.contains(.message(ChatMessage(role: .tool, content: "Hata: HTTP 500 hatası.", toolCallID: "c1"))))
 }
 
@@ -88,4 +88,11 @@ private struct EchoTool: Tool {
 
     #expect(prompt.contains("29 Ekim 2026"))
     #expect(prompt.contains("web_search"))
+    #expect(!prompt.contains("kişisel talimatları"))
+}
+
+@Test func systemPromptAppendsUserInstructions() {
+    let prompt = SystemPrompt.make(userInstructions: "  Emoji kullanma.\n")
+
+    #expect(prompt.hasSuffix("Kullanıcının kişisel talimatları (bunlara her zaman uy):\nEmoji kullanma."))
 }

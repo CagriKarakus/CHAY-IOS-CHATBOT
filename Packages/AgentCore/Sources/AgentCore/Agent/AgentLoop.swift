@@ -5,7 +5,7 @@ public enum AgentEvent: Equatable, Sendable {
     case text(String)
     /// Bir araç çalışmaya başladı. `id` araç çağrısının kimliği.
     case toolStarted(id: String, name: String, activity: String)
-    case toolFinished(id: String, sources: [Source], failed: Bool)
+    case toolFinished(id: String, sources: [Source], files: [URL], failed: Bool)
     /// Geçmişe eklenmesi gereken tam bir mesaj (araç çağrısı, araç sonucu veya final cevap).
     case message(ChatMessage)
 }
@@ -81,19 +81,19 @@ public struct AgentLoop: Sendable {
     private func execute(_ call: ToolCall, emit: (AgentEvent) -> Void) async throws -> ChatMessage {
         guard let tool = tools[call.function.name] else {
             emit(.toolStarted(id: call.id, name: call.function.name, activity: call.function.name))
-            emit(.toolFinished(id: call.id, sources: [], failed: true))
+            emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
             return ChatMessage(role: .tool, content: "Hata: '\(call.function.name)' adında bir araç yok.", toolCallID: call.id)
         }
 
         emit(.toolStarted(id: call.id, name: tool.name, activity: tool.activity(for: call.function.arguments) ?? tool.name))
         do {
             let output = try await tool.run(arguments: call.function.arguments)
-            emit(.toolFinished(id: call.id, sources: output.sources, failed: false))
+            emit(.toolFinished(id: call.id, sources: output.sources, files: output.files, failed: false))
             return ChatMessage(role: .tool, content: output.content, toolCallID: call.id)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            emit(.toolFinished(id: call.id, sources: [], failed: true))
+            emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
             return ChatMessage(role: .tool, content: "Hata: \(error.localizedDescription)", toolCallID: call.id)
         }
     }

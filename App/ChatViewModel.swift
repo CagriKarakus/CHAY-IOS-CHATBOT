@@ -13,6 +13,7 @@ struct ChatItem: Identifiable {
     var text: String
     var activities: [ToolActivity] = []
     var sources: [Source] = []
+    var files: [URL] = []
 }
 
 struct ToolActivity: Identifiable {
@@ -67,9 +68,11 @@ final class ChatViewModel {
             tools: [
                 WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
                 FetchPageTool(transport: transport),
+                WriteFileTool(directory: DocumentFile.directory),
             ]
         )
-        let messages = [ChatMessage(role: .system, content: SystemPrompt.make())] + history
+        let systemPrompt = SystemPrompt.make(userInstructions: settings.userInstructions)
+        let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
 
         Task {
             do {
@@ -98,10 +101,11 @@ final class ChatViewModel {
                 items[index].text += "\n\n"
             }
             items[index].activities.append(ToolActivity(id: callID, toolName: name, title: activity))
-        case let .toolFinished(callID, sources, failed):
+        case let .toolFinished(callID, sources, files, failed):
             if let activity = items[index].activities.firstIndex(where: { $0.id == callID }) {
                 items[index].activities[activity].state = failed ? .failed : .done
             }
+            items[index].files += files
             for source in sources where !items[index].sources.contains(where: { $0.url == source.url }) {
                 items[index].sources.append(source)
             }

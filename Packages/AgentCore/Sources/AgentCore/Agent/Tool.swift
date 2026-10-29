@@ -34,10 +34,13 @@ public struct ToolOutput: Equatable, Sendable {
     public var content: String
     /// Kullanıcıya gösterilecek kaynaklar.
     public var sources: [Source]
+    /// Aracın oluşturduğu dosyalar.
+    public var files: [URL]
 
-    public init(content: String, sources: [Source] = []) {
+    public init(content: String, sources: [Source] = [], files: [URL] = []) {
         self.content = content
         self.sources = sources
+        self.files = files
     }
 }
 
@@ -57,6 +60,7 @@ public enum ToolError: Error, Equatable, Sendable {
     case http(status: Int)
     case invalidURL
     case unsupportedContent(String)
+    case invalidFilename
 }
 
 extension ToolError: LocalizedError {
@@ -74,6 +78,8 @@ extension ToolError: LocalizedError {
             return "Geçersiz adres; sadece https:// adresleri okunabilir."
         case let .unsupportedContent(type):
             return "Bu içerik türü okunamıyor: \(type)."
+        case .invalidFilename:
+            return "Geçersiz dosya adı; klasör veya yol içermeyen bir ad ver (örn. ozet.md)."
         }
     }
 }

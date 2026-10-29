@@ -8,6 +8,9 @@ options:
 packages:
   AgentCore:
     path: Packages/AgentCore
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.0
 
 targets:
   AIAssistant:
@@ -16,6 +19,7 @@ targets:
     sources: [App]
     dependencies:
       - package: AgentCore
+      - package: MarkdownUI
     info:
       path: App/Info.plist
       properties:

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Atom One Dark renk paleti.
-enum Theme {
+enum Palette {
     static let background = Color(hex: 0x282C34)
     /// Giriş alanı ve ayar satırları.
     static let surface = Color(hex: 0x21252B)
