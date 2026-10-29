@@ -46,7 +46,7 @@ public struct WriteFileTool: Tool {
     }
 
     /// Modelin verdiği adı güvenli bir `.md` dosya adına çevirir.
-    static func sanitizedFilename(_ raw: String) throws -> String {
+    static func sanitizedFilename(_ raw: String, extension fileExtension: String = "md") throws -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               !trimmed.contains("/"), !trimmed.contains("\\"),
@@ -67,6 +67,6 @@ public struct WriteFileTool: Tool {
             .trimmingCharacters(in: .whitespaces)
 
         guard !base.isEmpty else { throw ToolError.invalidFilename }
-        return base + ".md"
+        return base + "." + fileExtension
     }
 }

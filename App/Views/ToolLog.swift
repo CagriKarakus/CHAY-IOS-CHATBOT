@@ -51,6 +51,7 @@ struct ToolLog: View {
             counts["generate_image"].map { _ in L("image generated", "görsel üretildi") },
             counts["use_skill"].map { _ in L("skill used", "skill kullanıldı") },
             counts["calculate"].map { _ in L("calculated", "hesaplandı") },
+            counts["create_artifact"].map { _ in L("page created", "sayfa oluşturuldu") },
         ].compactMap { $0 }
         let failed = activities.filter { $0.state == .failed }.count
         let steps = activities.count
@@ -98,6 +99,7 @@ struct ActivityRow: View {
         case "generate_image": "paintbrush"
         case "use_skill": "sparkles"
         case "calculate": "function"
+        case "create_artifact": "play.rectangle"
         default: "wrench.and.screwdriver"
         }
     }

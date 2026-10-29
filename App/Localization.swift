@@ -62,6 +62,7 @@ func activityTitle(toolName: String, detail: String?) -> String {
     case "read_notes": L("Reading notes", "Notlar okunuyor")
     case "use_skill": L("Using skill", "Skill kullanılıyor")
     case "calculate": L("Calculating", "Hesaplanıyor")
+    case "create_artifact": L("Creating page", "Sayfa oluşturuluyor")
     default: toolName
     }
     guard let detail, !detail.isEmpty else { return verb }

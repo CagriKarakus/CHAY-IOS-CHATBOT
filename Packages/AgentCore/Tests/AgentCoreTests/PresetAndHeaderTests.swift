@@ -48,3 +48,9 @@ import Testing
         #expect(error as? LLMError == .http(status: 500, message: "bad header ***"))
     }
 }
+
+@Test func matchesPresetByHost() {
+    #expect(ProviderPreset.matching(baseURL: " https://OpenRouter.ai/api/v1 ")?.id == "openrouter")
+    #expect(ProviderPreset.matching(baseURL: "https://api.deepseek.com")?.id == "deepseek")
+    #expect(ProviderPreset.matching(baseURL: "https://evren-llmapi.ssyz.org.tr/v1") == nil)
+}

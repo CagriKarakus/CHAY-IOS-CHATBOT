@@ -435,6 +435,7 @@ final class ChatViewModel {
             FetchPageTool(transport: transport),
             WriteFileTool(directory: DocumentFile.directory),
             CalculatorTool(evaluate: javaScriptCalculator),
+            CreateArtifactTool(directory: DocumentFile.directory),
         ]
         if usesMemory {
             tools += [SaveNoteTool(store: notes), ReadNotesTool(store: notes)] as [any Tool]

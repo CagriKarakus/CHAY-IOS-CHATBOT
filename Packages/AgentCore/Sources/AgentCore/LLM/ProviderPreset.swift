@@ -1,3 +1,5 @@
+import Foundation
+
 /// Bilinen router ve sağlayıcılar için hazır bağlantı ayarı (hepsi OpenAI-uyumlu endpoint).
 /// `{...}` içeren adresler hesaba veya sunucuya özeldir; kullanıcı yer tutucuyu doldurur.
 public struct ProviderPreset: Identifiable, Equatable, Sendable {
@@ -60,5 +62,11 @@ public struct ProviderPreset: Identifiable, Equatable, Sendable {
 
     public static func preset(id: String?) -> ProviderPreset? {
         all.first { $0.id == id }
+    }
+
+    /// Hazır ayar seçilmeden eklenmiş sağlayıcıyı adresinin host'undan tanır (yer tutuculu ayarlar hariç).
+    public static func matching(baseURL: String) -> ProviderPreset? {
+        guard let host = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased() else { return nil }
+        return all.first { !$0.needsEditing && URL(string: $0.baseURL)?.host?.lowercased() == host }
     }
 }

@@ -7,6 +7,12 @@ struct UsageView: View {
     @Environment(UsageTracker.self) private var usage
     @State private var confirmingReset = false
     @State private var tavily: TavilyState = .loading
+    /// Bakiye sorgusunu destekleyen sağlayıcıların sonucu (başarısızsa hata metni).
+    @State private var balances: [UUID: Result<ProviderBalance, BalanceError>] = [:]
+
+    struct BalanceError: Error {
+        let message: String
+    }
 
     private enum TavilyState {
         case loading, noKey
@@ -22,6 +28,9 @@ struct UsageView: View {
                         row(model.name, usage.totals(providerID: provider.id, model: model.name))
                     }
                     row(L("Total", "Toplam"), usage.totals(providerID: provider.id), emphasized: true)
+                    if ProviderBalance.supportedPresets.contains(balancePreset(provider) ?? "") {
+                        balanceRows(balances[provider.id])
+                    }
                 } header: {
                     header(provider.name)
                 }
@@ -79,8 +88,70 @@ struct UsageView: View {
         .confirmationDialog(L("Reset all usage counters?", "Tüm kullanım sayaçları sıfırlansın mı?"), isPresented: $confirmingReset, titleVisibility: .visible) {
             Button(L("Reset", "Sıfırla"), role: .destructive) { usage.reset() }
         }
-        .task { await loadTavily() }
-        .refreshable { await loadTavily() }
+        .task {
+            await loadTavily()
+            await loadBalances()
+        }
+        .refreshable {
+            await loadTavily()
+            await loadBalances()
+        }
+    }
+
+    @ViewBuilder
+    private func balanceRows(_ result: Result<ProviderBalance, BalanceError>?) -> some View {
+        switch result {
+        case nil:
+            HStack {
+                Text(L("Loading balance…", "Bakiye yükleniyor…"))
+                    .foregroundStyle(Palette.textMuted)
+                Spacer()
+                ProgressView()
+            }
+        case let .success(balance):
+            if let remaining = balance.remaining {
+                valueRow(L("Remaining", "Kalan"), money(remaining, balance.currency))
+            }
+            if let used = balance.used {
+                valueRow(L("Used", "Kullanılan"), money(used, balance.currency))
+            }
+            if let limit = balance.limit {
+                valueRow(L("Limit", "Limit"), money(limit, balance.currency))
+            }
+        case let .failure(error):
+            Text(error.message)
+                .font(.footnote)
+                .foregroundStyle(Palette.red)
+        }
+    }
+
+    /// Hazır ayarla eklenmemiş sağlayıcılar adreslerinden tanınır.
+    private func balancePreset(_ provider: Provider) -> String? {
+        provider.preset ?? ProviderPreset.matching(baseURL: provider.baseURL)?.id
+    }
+
+    private func money(_ value: Double, _ currency: String?) -> String {
+        value.formatted(.currency(code: currency ?? "USD").precision(.fractionLength(2...4)))
+    }
+
+    /// OpenRouter, DeepSeek ve LiteLLM için hesap bakiyesi.
+    private func loadBalances() async {
+        for provider in settings.providers where ProviderBalance.supportedPresets.contains(balancePreset(provider) ?? "") {
+            do {
+                if let balance = try await ProviderBalance.fetch(
+                    preset: balancePreset(provider),
+                    baseURL: provider.baseURL,
+                    apiKey: settings.apiKey(for: provider.id),
+                    transport: URLSessionTransport()
+                ) {
+                    balances[provider.id] = .success(balance)
+                }
+            } catch {
+                balances[provider.id] = .failure(BalanceError(
+                    message: L("Couldn't load the balance: ", "Bakiye alınamadı: ") + userFacingMessage(for: error)
+                ))
+            }
+        }
     }
 
     private func loadTavily() async {

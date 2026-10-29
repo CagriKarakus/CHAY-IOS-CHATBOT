@@ -1,25 +1,34 @@
 import Foundation
 
-/// Tavily ile web araması: başlık + URL + özet döndürür.
+/// Web aramasını yapan servis. Kullanıcı Ayarlar'dan seçer.
+public enum SearchBackend: Equatable, Sendable {
+    /// Tavily (api.tavily.com), API key ile.
+    case tavily(apiKey: String)
+    /// Brave Search API, API key ile.
+    case brave(apiKey: String)
+    /// Kendi sunucunda veya herkese açık bir SearXNG örneği (JSON çıktısı açık olmalı).
+    case searxng(baseURL: String)
+
+    var serviceName: String {
+        switch self {
+        case .tavily: "Tavily"
+        case .brave: "Brave Search"
+        case .searxng: "SearXNG"
+        }
+    }
+}
+
+/// Web araması: başlık + URL + özet döndürür.
 public struct WebSearchTool: Tool {
     private struct Arguments: Decodable {
         let query: String
         let max_results: Int?
     }
 
-    private struct TavilyRequest: Encodable {
-        let query: String
-        let max_results: Int
-        let search_depth = "basic"
-    }
-
-    private struct TavilyResponse: Decodable {
-        struct Result: Decodable {
-            let title: String
-            let url: String
-            let content: String?
-        }
-        let results: [Result]
+    private struct Result {
+        let title: String
+        let url: String
+        let snippet: String
     }
 
     public let name = "web_search"
@@ -40,16 +49,20 @@ public struct WebSearchTool: Tool {
 
     static let resultLimit = 1...10
 
-    private let apiKey: String
+    private let backend: SearchBackend
     private let transport: any HTTPTransport
     private let defaultMaxResults: Int
-    private let endpoint = URL(string: "https://api.tavily.com/search")!
 
     /// `defaultMaxResults`: model `max_results` vermezse kullanılır.
-    public init(apiKey: String, transport: any HTTPTransport, defaultMaxResults: Int = 3) {
-        self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    public init(backend: SearchBackend, transport: any HTTPTransport, defaultMaxResults: Int = 3) {
+        self.backend = backend
         self.transport = transport
         self.defaultMaxResults = defaultMaxResults
+    }
+
+    /// Tavily ile arama.
+    public init(apiKey: String, transport: any HTTPTransport, defaultMaxResults: Int = 3) {
+        self.init(backend: .tavily(apiKey: apiKey), transport: transport, defaultMaxResults: defaultMaxResults)
     }
 
     public func activityDetail(for arguments: String) -> String? {
@@ -59,30 +72,109 @@ public struct WebSearchTool: Tool {
     public func run(arguments: String) async throws -> ToolOutput {
         let arguments = try decodeArguments(Arguments.self, from: arguments)
         let query = arguments.query
-        guard !apiKey.isEmpty else { throw ToolError.missingAPIKey(service: "Tavily") }
         let maxResults = (arguments.max_results ?? defaultMaxResults).clamped(to: Self.resultLimit)
 
-        let request = HTTPRequest(
-            url: endpoint,
-            method: "POST",
-            headers: ["Authorization": "Bearer \(apiKey)", "Content-Type": "application/json"],
-            body: try JSONEncoder().encode(TavilyRequest(query: query, max_results: maxResults))
-        )
-        let response = try await transport.send(request)
-        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
-
-        let results = try JSONDecoder().decode(TavilyResponse.self, from: response.body).results
+        let results = Array(try await search(query, maxResults: maxResults).prefix(maxResults))
         guard !results.isEmpty else {
             return ToolOutput(content: "No results found for '\(query)'.")
         }
 
         let listing = results.enumerated().map { index, result in
-            "[\(index + 1)] \(result.title)\n\(result.url)\n\(result.content ?? "")"
+            "[\(index + 1)] \(result.title)\n\(result.url)\n\(result.snippet)"
         }.joined(separator: "\n\n")
         let sources = results.compactMap { result in
             URL(string: result.url).map { Source(title: result.title, url: $0) }
         }
         return ToolOutput(content: untrustedContent(listing, source: "web_search: \(query)"), sources: sources)
+    }
+
+    private func search(_ query: String, maxResults: Int) async throws -> [Result] {
+        switch backend {
+        case let .tavily(apiKey):
+            let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { throw ToolError.missingAPIKey(service: backend.serviceName) }
+            struct Body: Encodable {
+                let query: String
+                let max_results: Int
+                let search_depth = "basic"
+            }
+            struct Response: Decodable {
+                struct Item: Decodable {
+                    let title: String
+                    let url: String
+                    let content: String?
+                }
+                let results: [Item]
+            }
+            let response: Response = try await fetch(HTTPRequest(
+                url: URL(string: "https://api.tavily.com/search")!,
+                method: "POST",
+                headers: ["Authorization": "Bearer \(key)", "Content-Type": "application/json"],
+                body: try JSONEncoder().encode(Body(query: query, max_results: maxResults))
+            ))
+            return response.results.map { Result(title: $0.title, url: $0.url, snippet: $0.content ?? "") }
+
+        case let .brave(apiKey):
+            let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { throw ToolError.missingAPIKey(service: backend.serviceName) }
+            struct Response: Decodable {
+                struct Web: Decodable {
+                    struct Item: Decodable {
+                        let title: String
+                        let url: String
+                        let description: String?
+                    }
+                    let results: [Item]
+                }
+                let web: Web?
+            }
+            var components = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")!
+            components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: String(maxResults))]
+            let response: Response = try await fetch(HTTPRequest(
+                url: components.url!,
+                method: "GET",
+                headers: ["X-Subscription-Token": key, "Accept": "application/json"],
+                body: nil
+            ))
+            return (response.web?.results ?? []).map {
+                Result(title: Self.strippingTags($0.title), url: $0.url, snippet: Self.strippingTags($0.description ?? ""))
+            }
+
+        case let .searxng(baseURL):
+            guard let base = try? LLMConfiguration.validatedBaseURL(baseURL),
+                  var components = URLComponents(url: base.appendingPathComponent("search"), resolvingAgainstBaseURL: false)
+            else { throw ToolError.invalidURL }
+            components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "format", value: "json")]
+            struct Response: Decodable {
+                struct Item: Decodable {
+                    let title: String?
+                    let url: String
+                    let content: String?
+                }
+                let results: [Item]
+            }
+            let response: Response = try await fetch(HTTPRequest(
+                url: components.url!,
+                method: "GET",
+                headers: ["Accept": "application/json"],
+                body: nil
+            ))
+            return response.results.map { Result(title: $0.title ?? $0.url, url: $0.url, snippet: $0.content ?? "") }
+        }
+    }
+
+    private func fetch<T: Decodable>(_ request: HTTPRequest) async throws -> T {
+        let response = try await transport.send(request)
+        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+        return try JSONDecoder().decode(T.self, from: response.body)
+    }
+
+    /// Brave özetlerindeki `<strong>` gibi HTML etiketlerini atar.
+    static func strippingTags(_ text: String) -> String {
+        text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
     }
 }
 

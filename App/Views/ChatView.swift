@@ -174,13 +174,17 @@ struct ChatView: View {
                 SelectableTextSheet(item: item)
             }
             .sheet(item: $openedDocument) { document in
-                NavigationStack {
-                    DocumentView(document: document)
+                if document.isArtifact {
+                    ArtifactView(document: document)
+                } else {
+                    NavigationStack {
+                        DocumentView(document: document)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button(L("Close", "Kapat")) { openedDocument = nil }
                             }
                         }
+                    }
                 }
             }
             .onAppear {
@@ -583,16 +587,18 @@ private struct FileCard: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 12) {
-                Image(systemName: "doc.richtext")
+                Image(systemName: document.isArtifact ? "play.rectangle" : "doc.richtext")
                     .font(.title3)
-                    .foregroundStyle(Palette.blue)
+                    .foregroundStyle(document.isArtifact ? Palette.purple : Palette.blue)
                     .frame(width: 36, height: 36)
                     .background(Palette.background, in: .rect(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(document.name)
                         .lineLimit(1)
                         .foregroundStyle(Palette.textBright)
-                    Text(L("Markdown · tap to open", "Markdown · dokun ve aç"))
+                    Text(document.isArtifact
+                         ? L("Interactive page · tap to open", "Etkileşimli sayfa · dokun ve aç")
+                         : L("Markdown · tap to open", "Markdown · dokun ve aç"))
                         .font(.caption)
                         .foregroundStyle(Palette.textMuted)
                 }

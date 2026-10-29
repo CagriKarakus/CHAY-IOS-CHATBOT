@@ -16,7 +16,7 @@ struct DocumentFile: Identifiable, Hashable {
         let keys: [URLResourceKey] = [.contentModificationDateKey]
         let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)) ?? []
         return urls
-            .filter { $0.pathExtension.lowercased() == "md" }
+            .filter { ["md", "html"].contains($0.pathExtension.lowercased()) }
             .sorted { modificationDate($0) > modificationDate($1) }
             .map(DocumentFile.init)
     }
@@ -37,7 +37,11 @@ struct DocumentsView: View {
         List {
             ForEach(documents) { document in
                 NavigationLink {
-                    DocumentView(document: document)
+                    if document.isArtifact {
+                        ArtifactPage(document: document)
+                    } else {
+                        DocumentView(document: document)
+                    }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(document.name)
