@@ -2,18 +2,40 @@ import AgentCore
 import Foundation
 import Observation
 
+/// Ekrandaki bir mesaj. Asistan mesajı, bir istekteki tüm adımları (araçlar + cevap) toplar.
 struct ChatItem: Identifiable {
+    enum Role {
+        case user, assistant
+    }
+
     let id = UUID()
-    var message: ChatMessage
+    let role: Role
+    var text: String
+    var activities: [ToolActivity] = []
+    var sources: [Source] = []
 }
 
-/// Bellekteki sohbet geçmişi ve streaming cevap.
+struct ToolActivity: Identifiable {
+    enum State {
+        case running, done, failed
+    }
+
+    let id: String
+    let toolName: String
+    let title: String
+    var state: State = .running
+}
+
+/// Bellekteki sohbet: ekran mesajları + modele giden geçmiş.
 @Observable @MainActor
 final class ChatViewModel {
     private(set) var items: [ChatItem] = []
     private(set) var isStreaming = false
     var input = ""
     var errorMessage: String?
+
+    /// Modele giden mesajlar (sistem mesajı hariç): kullanıcı, asistan, araç çağrıları ve sonuçları.
+    private var history: [ChatMessage] = []
 
     var canSend: Bool {
         !isStreaming && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -33,30 +55,58 @@ final class ChatViewModel {
 
         input = ""
         errorMessage = nil
-        items.append(ChatItem(message: ChatMessage(role: .user, content: text)))
-        let history = items.map(\.message)
-        let reply = ChatItem(message: ChatMessage(role: .assistant, content: ""))
+        items.append(ChatItem(role: .user, text: text))
+        history.append(ChatMessage(role: .user, content: text))
+        let reply = ChatItem(role: .assistant, text: "")
         items.append(reply)
         isStreaming = true
 
-        let client = LLMClient(configuration: configuration, transport: URLSessionTransport())
+        let transport = URLSessionTransport()
+        let agent = AgentLoop(
+            client: LLMClient(configuration: configuration, transport: transport),
+            tools: [
+                WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
+                FetchPageTool(transport: transport),
+            ]
+        )
+        let messages = [ChatMessage(role: .system, content: SystemPrompt.make())] + history
+
         Task {
             do {
-                for try await delta in client.streamChat(history) {
-                    appendToReply(reply.id, delta)
+                for try await event in agent.run(messages) {
+                    apply(event, to: reply.id)
                 }
             } catch {
                 errorMessage = error.localizedDescription
             }
-            if let index = items.firstIndex(where: { $0.id == reply.id }), items[index].message.content?.isEmpty ?? true {
+            if let index = items.firstIndex(where: { $0.id == reply.id }),
+               items[index].text.isEmpty, items[index].activities.isEmpty {
                 items.remove(at: index)
             }
             isStreaming = false
         }
     }
 
-    private func appendToReply(_ id: ChatItem.ID, _ delta: String) {
+    private func apply(_ event: AgentEvent, to id: ChatItem.ID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
-        items[index].message.content = (items[index].message.content ?? "") + delta
+        switch event {
+        case let .text(delta):
+            items[index].text += delta
+        case let .toolStarted(callID, name, activity):
+            // Araçtan önce yazılmış metinle sonraki cevap birbirine yapışmasın.
+            if !items[index].text.isEmpty, !items[index].text.hasSuffix("\n\n") {
+                items[index].text += "\n\n"
+            }
+            items[index].activities.append(ToolActivity(id: callID, toolName: name, title: activity))
+        case let .toolFinished(callID, sources, failed):
+            if let activity = items[index].activities.firstIndex(where: { $0.id == callID }) {
+                items[index].activities[activity].state = failed ? .failed : .done
+            }
+            for source in sources where !items[index].sources.contains(where: { $0.url == source.url }) {
+                items[index].sources.append(source)
+            }
+        case let .message(message):
+            history.append(message)
+        }
     }
 }

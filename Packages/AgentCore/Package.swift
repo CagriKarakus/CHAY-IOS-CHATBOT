@@ -9,8 +9,12 @@ let package = Package(
     products: [
         .library(name: "AgentCore", targets: ["AgentCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
+    ],
     targets: [
-        .target(name: "AgentCore"),
-        .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"]),
+        .target(name: "AgentCore", dependencies: ["SwiftSoup"]),
+        // Fixture'lar #filePath ile okunur (Bundle.module'a gerek yok).
+        .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], exclude: ["Fixtures"]),
     ]
 )

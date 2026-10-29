@@ -32,6 +32,16 @@ struct URLSessionTransport: HTTPTransport {
         }
     }
 
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let (data, response) = try await session.data(for: urlRequest(from: request))
+        guard let http = response as? HTTPURLResponse else { throw LLMError.invalidResponse }
+        return HTTPResponse(
+            statusCode: http.statusCode,
+            contentType: http.value(forHTTPHeaderField: "Content-Type"),
+            body: data
+        )
+    }
+
     private func urlRequest(from request: HTTPRequest) -> URLRequest {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: 60)
         urlRequest.httpMethod = request.method

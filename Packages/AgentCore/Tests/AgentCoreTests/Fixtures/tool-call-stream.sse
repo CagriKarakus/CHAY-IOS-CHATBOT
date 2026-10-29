@@ -1,0 +1,36 @@
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":"The"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" user is asking"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" about"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" the weather in"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" Istanbul and"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" explicitly"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" asked me to"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" use the get"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":"_weather tool."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" Let me call"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"reasoning":" it."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"tool_calls":[{"id":"chatcmpl-tool-8714506b287573ca","type":"function","index":0,"function":{"name":"get_weather"}}]},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8676bdf57cf30340","object":"chat.completion.chunk","created":1793265759,"model":"zai/glm-5.3-fp8","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\": \"İstanbul"}}]},"logprobs":null,"finish_reason":null}]}
+
+data: {"id": "chatcmpl-8676bdf57cf30340", "object": "chat.completion.chunk", "created": 1793265759, "model": "zai/glm-5.3-fp8", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"}"}}]}, "logprobs": null, "finish_reason": null, "stop_reason": 154829}]}
+
+data: {"id": "chatcmpl-8676bdf57cf30340", "object": "chat.completion.chunk", "created": 1793265759, "model": "zai/glm-5.3-fp8", "choices": [{"index": 0, "delta": {}, "logprobs": null, "finish_reason": "tool_calls", "stop_reason": 154829}]}
+
+data: {"id": "chatcmpl-8676bdf57cf30340", "object": "chat.completion.chunk", "created": 1793265759, "model": "zai/glm-5.3-fp8", "choices": [], "usage": {"prompt_tokens": 180, "total_tokens": 218, "completion_tokens": 38, "prompt_tokens_details": {"cached_tokens": 0, "created_cache_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 25}}, "system_fingerprint": "vllm-0.28.1rc1.dev580+g385dce36b-tp8-ep-1fdba6cd"}
+
+data: [DONE]
+

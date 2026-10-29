@@ -8,6 +8,8 @@ struct AIAssistantApp: App {
         WindowGroup {
             ChatView()
                 .environment(settings)
+                .preferredColorScheme(.dark)
+                .tint(Theme.blue)
         }
     }
 }

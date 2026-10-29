@@ -5,16 +5,54 @@ import Testing
 @Test func streamsTextDeltas() async throws {
     let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport(responseLines: textStreamLines))
 
-    let deltas = try await collect(client.streamChat([ChatMessage(role: .user, content: "Selam")]))
+    let events = try await collect(client.streamChat([ChatMessage(role: .user, content: "Selam")]))
 
-    #expect(deltas == ["Merhaba", " dünya"])
+    #expect(events == [.text("Merhaba"), .text(" dünya")])
 }
 
 @Test func stopsAtDone() async throws {
     let lines = [#"data: {"choices":[{"delta":{"content":"a"}}]}"#, "data: [DONE]", #"data: {"choices":[{"delta":{"content":"b"}}]}"#]
     let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport(responseLines: lines))
 
-    #expect(try await collect(client.streamChat([])) == ["a"])
+    #expect(try await collect(client.streamChat([])) == [.text("a")])
+}
+
+@Test func parsesRecordedTextStreamWithoutReasoning() async throws {
+    let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport(responseLines: try fixtureLines("text-stream.sse")))
+
+    let events = try await collect(client.streamChat([]))
+    let text = events.map { event -> String in
+        if case let .text(delta) = event { return delta }
+        return ""
+    }.joined()
+
+    #expect(text.hasSuffix("Size nasıl yardımcı olabilirim?"))
+    #expect(!text.contains("The user"))
+    #expect(!events.contains { if case .toolCalls = $0 { true } else { false } })
+}
+
+@Test func assemblesRecordedToolCall() async throws {
+    let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport(responseLines: try fixtureLines("tool-call-stream.sse")))
+
+    let events = try await collect(client.streamChat([]))
+
+    #expect(events == [.toolCalls([ToolCall(id: "chatcmpl-tool-8714506b287573ca", name: "get_weather", arguments: #"{"city": "İstanbul"}"#)])])
+}
+
+@Test func mergesToolCallsByIndex() async throws {
+    let lines = [
+        #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"web_search","arguments":""}},{"index":1,"id":"b","function":{"name":"fetch_page","arguments":"{\"url\":"}}]}}]}"#,
+        #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"x\"}"}},{"index":1,"function":{"arguments":"\"https://a.com\"}"}}]}}]}"#,
+        "data: [DONE]",
+    ]
+    let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport(responseLines: lines))
+
+    let events = try await collect(client.streamChat([]))
+
+    #expect(events == [.toolCalls([
+        ToolCall(id: "a", name: "web_search", arguments: #"{"query":"x"}"#),
+        ToolCall(id: "b", name: "fetch_page", arguments: #"{"url":"https://a.com"}"#),
+    ])])
 }
 
 @Test func buildsStreamingRequest() throws {
@@ -29,7 +67,29 @@ import Testing
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     #expect(json["model"] as? String == "test-model")
     #expect(json["stream"] as? Bool == true)
+    #expect(json["tools"] == nil)
     #expect((json["messages"] as? [[String: Any]])?.first?["content"] as? String == "Selam")
+}
+
+@Test func encodesToolsAndToolMessages() throws {
+    let client = LLMClient(configuration: try makeConfiguration(), transport: MockTransport())
+    let messages = [
+        ChatMessage(role: .assistant, content: nil, toolCalls: [ToolCall(id: "c1", name: "web_search", arguments: #"{"query":"x"}"#)]),
+        ChatMessage(role: .tool, content: "sonuç", toolCallID: "c1"),
+    ]
+    let tool = ToolDefinition(name: "web_search", description: "Arar", parameters: ["type": "object"])
+
+    let body = try #require(try client.makeRequest(messages, tools: [tool]).body)
+    let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+    let tools = try #require(json["tools"] as? [[String: Any]])
+    #expect(tools.first?["type"] as? String == "function")
+    #expect((tools.first?["function"] as? [String: Any])?["name"] as? String == "web_search")
+    let encoded = try #require(json["messages"] as? [[String: Any]])
+    let call = try #require((encoded[0]["tool_calls"] as? [[String: Any]])?.first)
+    #expect(call["id"] as? String == "c1")
+    #expect((call["function"] as? [String: Any])?["arguments"] as? String == #"{"query":"x"}"#)
+    #expect(encoded[1]["tool_call_id"] as? String == "c1")
 }
 
 @Test func unauthorizedGivesReadableError() async throws {

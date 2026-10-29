@@ -1,5 +1,12 @@
 import Foundation
 
+public enum LLMStreamEvent: Equatable, Sendable {
+    /// Cevap metninin bir parçası.
+    case text(String)
+    /// Modelin istediği araç çağrıları; akışın sonunda, birleştirilmiş olarak bir kez gelir.
+    case toolCalls([ToolCall])
+}
+
 /// OpenAI-uyumlu `/chat/completions` istemcisi (SSE streaming).
 public struct LLMClient: Sendable {
     private let configuration: LLMConfiguration
@@ -10,12 +17,12 @@ public struct LLMClient: Sendable {
         self.transport = transport
     }
 
-    /// Cevabı geldikçe metin parçaları olarak döndürür. Akışı tüketen görev iptal edilirse istek de iptal edilir.
-    public func streamChat(_ messages: [ChatMessage]) -> AsyncThrowingStream<String, any Error> {
+    /// Cevabı geldikçe olaylar olarak döndürür. Akışı tüketen görev iptal edilirse istek de iptal edilir.
+    public func streamChat(_ messages: [ChatMessage], tools: [ToolDefinition] = []) -> AsyncThrowingStream<LLMStreamEvent, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await run(messages) { continuation.yield($0) }
+                    try await run(messages, tools: tools) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -25,9 +32,14 @@ public struct LLMClient: Sendable {
         }
     }
 
-    func makeRequest(_ messages: [ChatMessage]) throws -> HTTPRequest {
+    func makeRequest(_ messages: [ChatMessage], tools: [ToolDefinition] = []) throws -> HTTPRequest {
         let body = try JSONEncoder().encode(
-            ChatCompletionRequest(model: configuration.model, messages: messages, stream: true)
+            ChatCompletionRequest(
+                model: configuration.model,
+                messages: messages,
+                stream: true,
+                tools: tools.isEmpty ? nil : tools
+            )
         )
         return HTTPRequest(
             url: configuration.baseURL.appendingPathComponent("chat/completions"),
@@ -41,21 +53,24 @@ public struct LLMClient: Sendable {
         )
     }
 
-    private func run(_ messages: [ChatMessage], onDelta: (String) -> Void) async throws {
+    private func run(_ messages: [ChatMessage], tools: [ToolDefinition], onEvent: (LLMStreamEvent) -> Void) async throws {
         let decoder = JSONDecoder()
+        var toolCalls = ToolCallAccumulator()
         do {
-            for try await line in transport.lines(for: try makeRequest(messages)) {
+            lines: for try await line in transport.lines(for: try makeRequest(messages, tools: tools)) {
                 switch SSELine(line) {
                 case .ignored:
                     continue
                 case .done:
-                    return
+                    break lines
                 case let .data(json):
                     let data = Data(json.utf8)
                     if let chunk = try? decoder.decode(ChatCompletionChunk.self, from: data) {
-                        if let text = chunk.choices.first?.delta?.content, !text.isEmpty {
-                            onDelta(text)
+                        guard let delta = chunk.choices.first?.delta else { continue }
+                        if let text = delta.content, !text.isEmpty {
+                            onEvent(.text(text))
                         }
+                        delta.toolCalls?.forEach { toolCalls.add($0) }
                     } else if let message = apiErrorMessage(from: json) {
                         throw LLMError.server(message: message)
                     } else {
@@ -65,6 +80,9 @@ public struct LLMClient: Sendable {
             }
         } catch let error as HTTPStatusError {
             throw LLMError.http(status: error.statusCode, message: errorMessage(from: error.body))
+        }
+        if !toolCalls.isEmpty {
+            onEvent(.toolCalls(toolCalls.calls))
         }
     }
 
@@ -90,5 +108,27 @@ public struct LLMClient: Sendable {
             .replacingOccurrences(of: configuration.apiKey, with: "***")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
+    }
+}
+
+/// Parça parça gelen araç çağrılarını `index`'e göre birleştirir.
+private struct ToolCallAccumulator {
+    private var parts: [Int: (id: String?, name: String, arguments: String)] = [:]
+
+    var isEmpty: Bool { parts.isEmpty }
+
+    mutating func add(_ delta: ToolCallDelta) {
+        let index = delta.index ?? 0
+        var part = parts[index] ?? (id: nil, name: "", arguments: "")
+        if let id = delta.id, !id.isEmpty { part.id = id }
+        part.name += delta.function?.name ?? ""
+        part.arguments += delta.function?.arguments ?? ""
+        parts[index] = part
+    }
+
+    var calls: [ToolCall] {
+        parts.sorted { $0.key < $1.key }.map { index, part in
+            ToolCall(id: part.id ?? "call_\(index)", name: part.name, arguments: part.arguments)
+        }
     }
 }

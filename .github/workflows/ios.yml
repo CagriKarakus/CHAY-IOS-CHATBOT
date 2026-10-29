@@ -42,7 +42,7 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/AIAssistant.app Payload/
           zip -qry AIAssistant.ipa Payload
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: AIAssistant-ipa
           path: AIAssistant.ipa
