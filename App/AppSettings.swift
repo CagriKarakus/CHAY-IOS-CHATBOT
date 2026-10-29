@@ -220,6 +220,7 @@ final class AppSettings {
         case .tavily: .tavily(apiKey: tavilyKey)
         case .brave: .brave(apiKey: braveKey)
         case .searxng: .searxng(baseURL: searxngURL)
+        case .duckduckgo: .duckDuckGo
         }
     }
 
@@ -294,7 +295,7 @@ extension ReasoningEffort {
 
 /// Ayarlar'da seçilen arama servisi.
 enum SearchProvider: String, CaseIterable, Identifiable {
-    case tavily, brave, searxng
+    case tavily, brave, searxng, duckduckgo
 
     var id: String { rawValue }
 
@@ -303,6 +304,7 @@ enum SearchProvider: String, CaseIterable, Identifiable {
         case .tavily: "Tavily"
         case .brave: "Brave Search"
         case .searxng: "SearXNG"
+        case .duckduckgo: L("DuckDuckGo (no key)", "DuckDuckGo (anahtarsız)")
         }
     }
 }

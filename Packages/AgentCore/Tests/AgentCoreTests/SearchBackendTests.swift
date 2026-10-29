@@ -30,6 +30,41 @@ import Testing
     #expect(output.content.contains("[2] https://d.com\nhttps://d.com"))
 }
 
+@Test func duckDuckGoParsesHTMLResults() async throws {
+    let html = """
+    <div class="result results_links result--ad"><a class="result__a" href="https://duckduckgo.com/y.js?ad=1">Reklam</a></div>
+    <div class="result results_links web-result">
+      <h2><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.com%2Fcay%3Fx%3D1&amp;rut=abc">Çay <b>tarihi</b></a></h2>
+      <a class="result__snippet" href="#">Çayın &amp; hikayesi</a>
+    </div>
+    <div class="result web-result"><a class="result__a" href="https://b.com/">İki</a></div>
+    """
+    let transport = SendRecorder(json: html)
+    let tool = WebSearchTool(backend: .duckDuckGo, transport: transport)
+
+    let output = try await tool.run(arguments: #"{"query":"çay tarihi & fiyat","max_results":5}"#)
+
+    let request = try #require(transport.requests.first)
+    #expect(request.url.absoluteString == "https://html.duckduckgo.com/html/")
+    #expect(request.method == "POST")
+    #expect(String(decoding: try #require(request.body), as: UTF8.self) == "q=%C3%A7ay+tarihi+%26+fiyat&b=")
+    #expect(output.content.contains("[1] Çay tarihi\nhttps://a.com/cay?x=1\nÇayın & hikayesi"))
+    #expect(output.content.contains("[2] İki\nhttps://b.com/"))
+    #expect(!output.content.contains("Reklam"))
+}
+
+@Test func duckDuckGoReportsBlocking() async throws {
+    await #expect(throws: ToolError.searchBlocked(service: "DuckDuckGo")) {
+        try await WebSearchTool(backend: .duckDuckGo, transport: SendRecorder(status: 202, json: "")).run(arguments: #"{"query":"x"}"#)
+    }
+    let challenge = #"<html><div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div></html>"#
+    await #expect(throws: ToolError.searchBlocked(service: "DuckDuckGo")) {
+        try await WebSearchTool(backend: .duckDuckGo, transport: SendRecorder(json: challenge)).run(arguments: #"{"query":"x"}"#)
+    }
+    let empty = try await WebSearchTool(backend: .duckDuckGo, transport: SendRecorder(json: "<html></html>")).run(arguments: #"{"query":"x"}"#)
+    #expect(empty.content == "No results found for 'x'.")
+}
+
 @Test func searchBackendsValidateSettings() async throws {
     await #expect(throws: ToolError.missingAPIKey(service: "Brave Search")) {
         try await WebSearchTool(backend: .brave(apiKey: ""), transport: MockTransport()).run(arguments: #"{"query":"x"}"#)

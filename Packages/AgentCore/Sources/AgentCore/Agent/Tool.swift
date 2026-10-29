@@ -70,6 +70,8 @@ public enum ToolError: Error, Equatable, Sendable {
     case unsupportedContent(String)
     case invalidFilename
     case tooLong(limit: Int)
+    /// Arama servisi otomatik aramaları geçici olarak engelliyor (ör. CAPTCHA).
+    case searchBlocked(service: String)
 }
 
 extension ToolError: LocalizedError {
@@ -91,6 +93,8 @@ extension ToolError: LocalizedError {
             return "Invalid file name; use a plain name without folders or paths (e.g. summary.md)."
         case let .tooLong(limit):
             return "Content is too long; the limit is \(limit) characters."
+        case let .searchBlocked(service):
+            return "\(service) is temporarily blocking automated searches. Try again later, or the user can switch the search service in Settings."
         }
     }
 }

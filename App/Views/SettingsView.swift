@@ -134,6 +134,8 @@ struct SettingsView: View {
                     case .searxng:
                         TextField("SearXNG URL", text: $searxngURL, prompt: prompt("https://search.example.com"))
                             .keyboardType(.URL)
+                    case .duckduckgo:
+                        EmptyView()
                     }
                 } header: {
                     header(L("Web search", "Web araması"))
@@ -185,6 +187,9 @@ extension SettingsView {
         case .searxng:
             L("Address of your own SearXNG instance (HTTPS). JSON output must be enabled in its settings (search.formats: json).",
               "Kendi SearXNG sunucunun adresi (HTTPS). Sunucu ayarlarında JSON çıktısı açık olmalı (search.formats: json).")
+        case .duckduckgo:
+            L("No key needed. It reads DuckDuckGo's plain HTML results, which is not an official API: it can break or be blocked for a while under heavy use. Good as a backup when your Tavily or Brave quota runs out.",
+              "Key gerekmez. DuckDuckGo'nun sade HTML sonuçlarını okur; resmi bir API değildir, bozulabilir veya yoğun kullanımda bir süre engellenebilir. Tavily veya Brave kotan bittiğinde yedek olarak iyidir.")
         }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftSoup
 
 /// Web aramasını yapan servis. Kullanıcı Ayarlar'dan seçer.
 public enum SearchBackend: Equatable, Sendable {
@@ -8,12 +9,16 @@ public enum SearchBackend: Equatable, Sendable {
     case brave(apiKey: String)
     /// Kendi sunucunda veya herkese açık bir SearXNG örneği (JSON çıktısı açık olmalı).
     case searxng(baseURL: String)
+    /// DuckDuckGo'nun JavaScript'siz HTML sayfası; key gerekmez. Resmi API değil, sayfa değişirse veya
+    /// DuckDuckGo otomatik aramaları engellerse çalışmayabilir.
+    case duckDuckGo
 
     var serviceName: String {
         switch self {
         case .tavily: "Tavily"
         case .brave: "Brave Search"
         case .searxng: "SearXNG"
+        case .duckDuckGo: "DuckDuckGo"
         }
     }
 }
@@ -25,7 +30,7 @@ public struct WebSearchTool: Tool {
         let max_results: Int?
     }
 
-    private struct Result {
+    struct Result: Equatable {
         let title: String
         let url: String
         let snippet: String
@@ -160,7 +165,65 @@ public struct WebSearchTool: Tool {
                 body: nil
             ))
             return response.results.map { Result(title: $0.title ?? $0.url, url: $0.url, snippet: $0.content ?? "") }
+
+        case .duckDuckGo:
+            let response = try await transport.send(HTTPRequest(
+                url: URL(string: "https://html.duckduckgo.com/html/")!,
+                method: "POST",
+                headers: [
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+                ],
+                body: Data("q=\(Self.formEncoded(query))&b=".utf8)
+            ))
+            // DuckDuckGo şüphelendiğinde 202 ile doğrulama (CAPTCHA) sayfası döndürür.
+            if response.statusCode == 202 { throw ToolError.searchBlocked(service: backend.serviceName) }
+            guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+            let html = String(decoding: response.body, as: UTF8.self)
+            let results = try Self.duckDuckGoResults(html)
+            if results.isEmpty, html.contains("anomaly-modal") || html.contains("challenge-form") {
+                throw ToolError.searchBlocked(service: backend.serviceName)
+            }
+            return results
         }
+    }
+
+    /// DuckDuckGo HTML sonuçları: reklamlar atlanır, yönlendirme linkleri asıl adrese çevrilir.
+    static func duckDuckGoResults(_ html: String) throws -> [Result] {
+        let document = try SwiftSoup.parse(html)
+        return try document.select("div.result").compactMap { element in
+            guard !element.hasClass("result--ad"),
+                  let link = try element.select("a.result__a").first(),
+                  let url = duckDuckGoTarget(try link.attr("href"))
+            else { return nil }
+            let snippet = try element.select(".result__snippet").first()?.text() ?? ""
+            return Result(title: try link.text(), url: url, snippet: snippet)
+        }
+    }
+
+    /// `//duckduckgo.com/l/?uddg=<adres>` → asıl adres. DuckDuckGo'nun kendi sayfaları (reklam) elenir.
+    static func duckDuckGoTarget(_ href: String) -> String? {
+        let absolute = href.hasPrefix("//") ? "https:" + href : href
+        guard let components = URLComponents(string: absolute) else { return nil }
+        let target: String
+        if components.host?.hasSuffix("duckduckgo.com") == true {
+            guard components.path == "/l/",
+                  let uddg = components.queryItems?.first(where: { $0.name == "uddg" })?.value
+            else { return nil }
+            target = uddg
+        } else {
+            target = absolute
+        }
+        guard let url = URL(string: target), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.hasSuffix("duckduckgo.com") != true
+        else { return nil }
+        return target
+    }
+
+    /// application/x-www-form-urlencoded: harf/rakam dışındaki her bayt kodlanır, boşluk `+` olur.
+    static func formEncoded(_ text: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~ ")
+        return (text.addingPercentEncoding(withAllowedCharacters: allowed) ?? "").replacingOccurrences(of: " ", with: "+")
     }
 
     private func fetch<T: Decodable>(_ request: HTTPRequest) async throws -> T {
