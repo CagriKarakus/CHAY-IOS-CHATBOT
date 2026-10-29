@@ -1,0 +1,25 @@
+# Xcode (XcodeGen ile CI'da üretilir)
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+App/Info.plist
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Çıktılar
+*.ipa
+Payload/
+
+# Editör / OS
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+
+# Sırlar
+.env
+*.key
