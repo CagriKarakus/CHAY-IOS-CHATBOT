@@ -84,6 +84,8 @@ final class ChatViewModel {
     private(set) var memoryEnabled = true
     /// Bu sohbette seçili skill'ler; `nil` ise kütüphanedeki varsayılanlar.
     private(set) var selectedSkillIDs: Set<UUID>?
+    /// Düzenlenmekte olan kullanıcı mesajı; gönderilince o mesaj ve sonrası yeniden oluşturulur.
+    private(set) var editingItemID: ChatItem.ID?
     var input = ""
     var errorMessage: String?
 
@@ -174,6 +176,65 @@ final class ChatViewModel {
         isIncognito = incognito
         memoryEnabled = true
         selectedSkillIDs = nil
+        editingItemID = nil
+    }
+
+    // MARK: - Düzenle / yeniden üret
+
+    /// Kullanıcı mesajının modele giden geçmişteki yeri; eski mesajlar bağlam sıkıştırmasıyla
+    /// özetlendiyse `nil` (o mesaj artık düzenlenemez).
+    private func historyIndex(ofUserItem id: ChatItem.ID) -> Int? {
+        let userItems = items.filter { $0.role == .user }
+        guard let position = userItems.firstIndex(where: { $0.id == id }) else { return nil }
+        let fromEnd = userItems.count - 1 - position
+        let userIndices = history.indices.filter { history[$0].role == .user }
+        guard fromEnd < userIndices.count else { return nil }
+        return userIndices[userIndices.count - 1 - fromEnd]
+    }
+
+    func canEdit(_ item: ChatItem) -> Bool {
+        !isStreaming && item.role == .user && historyIndex(ofUserItem: item.id) != nil
+    }
+
+    /// Mesajı (ekleriyle) giriş kutusuna geri koyar; gönderilince bu mesajdan sonrası silinip yeniden sorulur.
+    func beginEditing(_ item: ChatItem) {
+        guard canEdit(item), let index = historyIndex(ofUserItem: item.id) else { return }
+        input = item.text
+        let full = history[index].attachments ?? []
+        pendingAttachments = zip(full, item.attachments ?? []).map { PendingAttachment(attachment: $0, preview: $1) }
+        editingItemID = item.id
+        errorMessage = nil
+    }
+
+    func cancelEditing() {
+        editingItemID = nil
+        input = ""
+        pendingAttachments = []
+    }
+
+    var canRegenerate: Bool {
+        !isStreaming && items.last?.role == .assistant && history.contains { $0.role == .user }
+    }
+
+    /// Son cevabı siler ve son kullanıcı mesajını (seçili modelle) yeniden gönderir.
+    func regenerate(using settings: AppSettings) {
+        guard canRegenerate,
+              let lastUserItem = items.lastIndex(where: { $0.role == .user }),
+              let lastUserMessage = history.lastIndex(where: { $0.role == .user })
+        else { return }
+        items.removeSubrange(items.index(after: lastUserItem)...)
+        history.removeSubrange(history.index(after: lastUserMessage)...)
+        errorMessage = nil
+        if settings.selected?.model.generatesImages == true {
+            generateImage(prompt: history[lastUserMessage].content ?? "", using: settings)
+        } else {
+            runTurn(using: settings)
+        }
+    }
+
+    /// Dışa aktarma ve dosya adları için sohbet başlığı.
+    var title: String {
+        ConversationRecord.title(for: ConversationContent(items: items, history: []))
     }
 
     func setMemoryEnabled(_ enabled: Bool) {
@@ -254,6 +315,17 @@ final class ChatViewModel {
             errorMessage = L("This model doesn't accept audio. Choose another model or remove the recording.",
                              "Bu model ses kabul etmiyor. Başka bir model seç ya da kaydı kaldır.")
             return
+        }
+
+        // Düzenlenen mesaj: o mesaj ve sonrası silinir, yeni hali gönderilir.
+        if let editing = editingItemID {
+            if let itemIndex = items.firstIndex(where: { $0.id == editing }),
+               let messageIndex = historyIndex(ofUserItem: editing) {
+                items.removeSubrange(itemIndex...)
+                history.removeSubrange(messageIndex...)
+                lastPromptTokens = nil
+            }
+            editingItemID = nil
         }
 
         let attachments = pendingAttachments
@@ -354,6 +426,7 @@ final class ChatViewModel {
             WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
             FetchPageTool(transport: transport),
             WriteFileTool(directory: DocumentFile.directory),
+            CalculatorTool(evaluate: javaScriptCalculator),
         ]
         if usesMemory {
             tools += [SaveNoteTool(store: notes), ReadNotesTool(store: notes)] as [any Tool]

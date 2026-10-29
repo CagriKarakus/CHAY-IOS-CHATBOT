@@ -14,6 +14,10 @@
 - **PDF ve metin dosyaları**: metin telefonda çıkarılıp mesajla gönderilir, bu yüzden her modelde çalışır; fotoğraf kamerayla da çekilebilir ve tam ekran açılabilir
 - Agent Skills formatında **skill'ler** (`SKILL.md`): herhangi bir GitHub reposundan veya plugin marketplace'inden (örn. `anthropics/skills`) ekleme ya da kendin yazma; uygun bir görevde model skill'in talimatını yükler, skill'ler her sohbette açılıp kapatılabilir
 - **Sohbete özel hafıza anahtarı** ve kaydedilmeyen, hafızaya dokunmayan **gizli sohbet**
+- **Düzenle ve yeniden üret**: gönderilen mesajı düzeltip yeniden sorma ya da son cevabı aynı veya başka bir modelle yeniden üretme
+- **Sohbetlerde arama**, sohbeti Markdown veya PDF olarak **dışa aktarma** ve sık istekler için **hazır komutlar**
+- **Hesaplama aracı**: matematik, sıkı bir izin listesi kontrolünden sonra (sadece sayılar, işlemler ve Math fonksiyonları) telefonun JavaScript motorunda hesaplanır
+- **Yedekleme**: her şeyi (API key'ler hariç) tek dosyaya aktarma ve geri yükleme
 - [Tavily](https://tavily.com) ile **web araştırması**: kaç arama ve kaç sonuç gerektiğine model karar verir, sayfaları okur ve kaynak gösterir
 - **Markdown doküman**: asistan Dosyalar uygulamasında görünen `.md` dosyaları yazar; uygulama içinde görüntüleme ve paylaşma
 - **Hafıza**: kalıcı bilgiler ve tercihler not olarak saklanır ve her sohbete eklenir; notlar düzenlenip silinebilir

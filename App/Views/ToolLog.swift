@@ -50,6 +50,7 @@ struct ToolLog: View {
             counts["compact"].map { _ in L("context summarized", "bağlam özetlendi") },
             counts["generate_image"].map { _ in L("image generated", "görsel üretildi") },
             counts["use_skill"].map { _ in L("skill used", "skill kullanıldı") },
+            counts["calculate"].map { _ in L("calculated", "hesaplandı") },
         ].compactMap { $0 }
         let failed = activities.filter { $0.state == .failed }.count
         let steps = activities.count
@@ -96,6 +97,7 @@ struct ActivityRow: View {
         case "compact": "rectangle.compress.vertical"
         case "generate_image": "paintbrush"
         case "use_skill": "sparkles"
+        case "calculate": "function"
         default: "wrench.and.screwdriver"
         }
     }

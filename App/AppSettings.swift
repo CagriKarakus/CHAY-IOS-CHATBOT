@@ -153,6 +153,23 @@ final class AppSettings {
         persistProviders()
     }
 
+    /// Yedekten gelen sağlayıcıları ekler (key'siz; kullanıcı yeniden girer). Eklenen sayıyı döndürür.
+    func importProviders(_ incoming: [Provider]) -> Int {
+        let new = incoming.filter { provider in !providers.contains { $0.id == provider.id } }
+        providers += new
+        for provider in new { apiKeys[provider.id] = "" }
+        persistProviders()
+        return new.count
+    }
+
+    /// Kişisel talimat boşsa yedektekini kullanır; var olanın üzerine yazmaz.
+    func importUserInstructions(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard userInstructions.isEmpty, !trimmed.isEmpty else { return }
+        userInstructions = trimmed
+        UserDefaults.standard.set(trimmed, forKey: Keys.userInstructions)
+    }
+
     func saveGeneral(tavilyKey: String, userInstructions: String) {
         self.userInstructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(self.userInstructions, forKey: Keys.userInstructions)

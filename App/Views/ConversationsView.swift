@@ -10,10 +10,17 @@ struct ConversationsView: View {
 
     @Environment(\.modelContext) private var context
     @Query(sort: \ConversationRecord.updatedAt, order: .reverse) private var conversations: [ConversationRecord]
+    @State private var query = ""
+
+    /// Başlıkta veya mesajlarda aranan metni içeren sohbetler.
+    private var filtered: [ConversationRecord] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? conversations : conversations.filter { $0.matches(trimmed) }
+    }
 
     var body: some View {
         List {
-            ForEach(conversations) { conversation in
+            ForEach(filtered) { conversation in
                 Button {
                     open(conversation)
                 } label: {
@@ -51,6 +58,12 @@ struct ConversationsView: View {
                 .foregroundStyle(Palette.textMuted)
             }
         }
+        .overlay {
+            if !conversations.isEmpty, filtered.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .searchable(text: $query, prompt: L("Search chats", "Sohbetlerde ara"))
         .navigationTitle(L("Chats", "Sohbetler"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.background, for: .navigationBar)
@@ -59,7 +72,7 @@ struct ConversationsView: View {
 
     private func delete(at offsets: IndexSet) {
         for index in offsets {
-            let conversation = conversations[index]
+            let conversation = filtered[index]
             if conversation.id == currentID {
                 deletedCurrent()
             }

@@ -46,6 +46,14 @@ final class SkillLibrary {
         save()
     }
 
+    /// Yedekten gelenleri ekler; aynı adlı skill varsa atlar. Eklenen sayıyı döndürür.
+    func importSkills(_ incoming: [InstalledSkill]) -> Int {
+        let new = incoming.filter { item in !skills.contains { $0.skill.name == item.skill.name } }
+        skills += new
+        save()
+        return new.count
+    }
+
     func update(_ installed: InstalledSkill) {
         if let index = skills.firstIndex(where: { $0.id == installed.id }) {
             skills[index] = installed

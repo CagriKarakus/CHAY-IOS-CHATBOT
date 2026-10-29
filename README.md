@@ -14,6 +14,10 @@ A native iOS assistant that runs on **your own LLM API key**. It can research th
 - **PDF and text files**: text is extracted on the device and sent with the message, so it works with any model; photos can also be taken with the camera and opened full screen
 - **Skills** in the Agent Skills format (`SKILL.md`): import from any GitHub repository or plugin marketplace (e.g. `anthropics/skills`) or write your own; the model loads a skill's instructions when a task matches, and skills can be turned on or off per chat
 - **Per-chat memory switch** and **incognito chats** that are not saved and don't touch memory
+- **Edit and regenerate**: edit a sent message and ask again, or regenerate the last reply with the same or another model
+- **Search chats**, **export a chat** as Markdown or PDF, and a **prompt library** for frequent requests
+- **Calculator tool**: math is evaluated by the phone's JavaScript engine after a strict allow-list check (numbers, operators and Math functions only)
+- **Backup**: export everything (except API keys) to one file and import it back
 - **Web research** with [Tavily](https://tavily.com): the model decides how many searches and results a question needs, reads pages and cites sources
 - **Markdown documents**: the assistant writes `.md` files that show up in the Files app; view and share them in the app
 - **Memory**: lasting facts and preferences are saved as notes and shared with every chat; notes can be edited or deleted

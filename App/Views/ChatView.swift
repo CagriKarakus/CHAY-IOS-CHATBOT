@@ -12,6 +12,7 @@ struct ChatView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(UsageTracker.self) private var usage
     @Environment(SkillLibrary.self) private var skills
+    @Environment(PromptLibrary.self) private var prompts
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChatViewModel()
     @State private var path: [Route] = []
@@ -24,6 +25,8 @@ struct ChatView: View {
     @State private var showingCamera = false
     @State private var showingFileImporter = false
     @State private var viewedImage: ViewedImage?
+    @State private var sharedFile: SharedFile?
+    @State private var newPrompt: SavedPrompt?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -59,6 +62,13 @@ struct ChatView: View {
                         Button(L("Documents", "Dokümanlar"), systemImage: "folder") { path.append(.documents) }
                         Button(L("Memory", "Hafıza"), systemImage: "brain") { path.append(.notes) }
                         Button(L("Settings", "Ayarlar"), systemImage: "slider.horizontal.3") { showingSettings = true }
+                        Menu {
+                            Button("Markdown (.md)", systemImage: "doc.plaintext") { export(pdf: false) }
+                            Button("PDF", systemImage: "doc.richtext") { export(pdf: true) }
+                        } label: {
+                            Label(L("Export Chat", "Sohbeti dışa aktar"), systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(viewModel.items.isEmpty)
                     } label: {
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(Palette.text)
@@ -141,6 +151,13 @@ struct ChatView: View {
                 }
                 viewModel.addDocument(text: text, name: url.lastPathComponent)
             }
+            .sheet(item: $sharedFile) { file in
+                ShareSheet(items: [file.url])
+                    .presentationDetents([.medium, .large])
+            }
+            .sheet(item: $newPrompt) { prompt in
+                PromptEditor(original: prompt)
+            }
             .sheet(item: $selectingText) { item in
                 SelectableTextSheet(item: item)
             }
@@ -170,15 +187,27 @@ struct ChatView: View {
                     ForEach(viewModel.items) { item in
                         switch item.role {
                         case .user:
-                            UserMessage(text: item.text, attachments: item.attachments ?? []) { viewedImage = ViewedImage(image: $0) }
-                                .id(item.id)
+                            UserMessage(
+                                text: item.text,
+                                attachments: item.attachments ?? [],
+                                showImage: { viewedImage = ViewedImage(image: $0) },
+                                edit: viewModel.canEdit(item) ? {
+                                    viewModel.beginEditing(item)
+                                    inputFocused = true
+                                } : nil
+                            )
+                            .id(item.id)
                         case .assistant:
                             AssistantMessage(
                                 item: item,
                                 isStreaming: viewModel.isStreaming && item.id == viewModel.items.last?.id,
                                 openDocument: { openedDocument = $0 },
                                 selectText: { selectingText = SelectableTextItem(text: $0) },
-                                showImage: { viewedImage = ViewedImage(image: $0) }
+                                showImage: { viewedImage = ViewedImage(image: $0) },
+                                regenerate: item.id == viewModel.items.last?.id && viewModel.canRegenerate ? { modelID in
+                                    if let modelID { settings.select(modelID) }
+                                    viewModel.regenerate(using: settings)
+                                } : nil
                             )
                             .id(item.id)
                         }
@@ -240,6 +269,16 @@ struct ChatView: View {
     /// Claude tarzı yuvarlak giriş kutusu.
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if viewModel.editingItemID != nil {
+                HStack {
+                    Label(L("Editing message", "Mesaj düzenleniyor"), systemImage: "pencil")
+                        .foregroundStyle(Palette.yellow)
+                    Spacer()
+                    Button(L("Cancel", "Vazgeç")) { viewModel.cancelEditing() }
+                        .foregroundStyle(Palette.textMuted)
+                }
+                .font(.footnote)
+            }
             if !viewModel.pendingAttachments.isEmpty {
                 PendingAttachmentStrip(attachments: viewModel.pendingAttachments) { viewModel.removeAttachment($0) }
             }
@@ -332,6 +371,22 @@ struct ChatView: View {
                         Label(L("Memory in This Chat", "Bu sohbette hafıza"), systemImage: "brain")
                     }
                 }
+                Menu {
+                    ForEach(prompts.prompts) { prompt in
+                        Button(prompt.title) {
+                            viewModel.input = prompt.text + viewModel.input
+                            inputFocused = true
+                        }
+                    }
+                    if !viewModel.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Divider()
+                        Button(L("Save Text as Prompt", "Metni komut olarak kaydet"), systemImage: "plus") {
+                            newPrompt = SavedPrompt(title: "", text: viewModel.input)
+                        }
+                    }
+                } label: {
+                    Label(L("Prompts", "Hazır komutlar"), systemImage: "text.badge.star")
+                }
                 if !skills.skills.isEmpty {
                     Menu {
                         ForEach(skills.skills) { skill in
@@ -363,6 +418,18 @@ struct ChatView: View {
         .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
     }
 
+    private func export(pdf: Bool) {
+        let title = viewModel.title
+        do {
+            let url = pdf
+                ? try ChatExport.temporaryFile(named: title, extension: "pdf", data: ChatExport.pdf(title: title, items: viewModel.items))
+                : try ChatExport.temporaryFile(named: title, extension: "md", data: Data(ChatExport.markdown(title: title, items: viewModel.items).utf8))
+            sharedFile = SharedFile(url: url)
+        } catch {
+            viewModel.errorMessage = userFacingMessage(for: error)
+        }
+    }
+
     private func startRecording() {
         inputFocused = false
         Task {
@@ -383,6 +450,8 @@ private struct UserMessage: View {
     let text: String
     let attachments: [AttachmentPreview]
     let showImage: (UIImage) -> Void
+    /// `nil` ise mesaj düzenlenemez (ör. bağlam sıkıştırmasıyla özetlenmiş eski mesaj).
+    let edit: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -410,6 +479,9 @@ private struct UserMessage: View {
                         Button(L("Copy", "Kopyala"), systemImage: "doc.on.doc") {
                             UIPasteboard.general.string = text
                         }
+                        if let edit {
+                            Button(L("Edit", "Düzenle"), systemImage: "pencil", action: edit)
+                        }
                     }
             }
         }
@@ -426,6 +498,8 @@ private struct AssistantMessage: View {
     let openDocument: (DocumentFile) -> Void
     let selectText: (String) -> Void
     let showImage: (UIImage) -> Void
+    /// Son cevapta: aynı (`nil`) veya seçilen modelle yeniden üret.
+    let regenerate: ((UUID?) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -472,8 +546,14 @@ private struct AssistantMessage: View {
                 }
             }
 
-            if !isStreaming, item.usage != nil || item.stopped == true {
-                MessageFooter(usage: item.usage, stopped: item.stopped == true)
+            if !isStreaming, item.usage != nil || item.stopped == true || regenerate != nil {
+                HStack(spacing: 12) {
+                    MessageFooter(usage: item.usage, stopped: item.stopped == true)
+                    Spacer()
+                    if let regenerate {
+                        RegenerateMenu(regenerate: regenerate)
+                    }
+                }
             }
 
             if !item.sources.isEmpty {
@@ -550,5 +630,32 @@ private struct SourceList: View {
                 }
             }
         }
+    }
+}
+
+/// Son cevabın altında: dokununca aynı modelle, menüden başka bir modelle yeniden üretir.
+private struct RegenerateMenu: View {
+    @Environment(AppSettings.self) private var settings
+    let regenerate: (UUID?) -> Void
+
+    var body: some View {
+        Menu {
+            Button(L("Regenerate", "Yeniden üret"), systemImage: "arrow.clockwise") { regenerate(nil) }
+            ForEach(settings.providers) { provider in
+                Section(L("With \(provider.name)", "\(provider.name) ile")) {
+                    ForEach(provider.models) { model in
+                        Button(model.name) { regenerate(model.id) }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.footnote)
+                .foregroundStyle(Palette.textMuted)
+                .padding(6)
+        } primaryAction: {
+            regenerate(nil)
+        }
+        .accessibilityLabel(L("Regenerate", "Yeniden üret"))
     }
 }

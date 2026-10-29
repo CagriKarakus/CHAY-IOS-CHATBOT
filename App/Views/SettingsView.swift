@@ -57,6 +57,18 @@ struct SettingsView: View {
                         Label(L("Skills", "Skill'ler"), systemImage: "sparkles")
                             .foregroundStyle(Palette.textBright)
                     }
+                    NavigationLink {
+                        PromptsView()
+                    } label: {
+                        Label(L("Prompts", "Hazır komutlar"), systemImage: "text.badge.star")
+                            .foregroundStyle(Palette.textBright)
+                    }
+                    NavigationLink {
+                        BackupView()
+                    } label: {
+                        Label(L("Backup", "Yedekleme"), systemImage: "externaldrive")
+                            .foregroundStyle(Palette.textBright)
+                    }
                 }
                 .listRowBackground(Palette.surface)
 
