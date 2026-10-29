@@ -1,7 +1,7 @@
 import Foundation
 
 /// Markdown dosyasını verilen klasöre (iOS'ta uygulamanın Documents klasörü) yazar.
-/// Sadece düz dosya adı kabul edilir: klasör, `..` veya mutlak yol reddedilir; aynı adlı dosyanın üzerine yazılmaz.
+/// Sadece düz dosya adı kabul edilir: klasör, `..` veya mutlak yol reddedilir. Aynı adlı dosya varsa yerinde güncellenir.
 public struct WriteFileTool: Tool {
     private struct Arguments: Decodable {
         let filename: String
@@ -35,11 +35,12 @@ public struct WriteFileTool: Tool {
         let filename = try Self.sanitizedFilename(arguments.filename)
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = uniqueURL(for: filename)
+        let url = directory.appendingPathComponent(filename)
+        let existed = FileManager.default.fileExists(atPath: url.path)
         try Data(arguments.content.utf8).write(to: url, options: .atomic)
 
         return ToolOutput(
-            content: "Dosya kaydedildi: \(url.lastPathComponent) (\(arguments.content.count) karakter). Kullanıcı dosyayı uygulamadaki Dokümanlar ekranında veya Dosyalar uygulamasında açabilir.",
+            content: "Dosya \(existed ? "güncellendi" : "kaydedildi"): \(url.lastPathComponent) (\(arguments.content.count) karakter). Kullanıcı dosyayı uygulamadaki Dokümanlar ekranında veya Dosyalar uygulamasında açabilir.",
             files: [url]
         )
     }
@@ -67,17 +68,5 @@ public struct WriteFileTool: Tool {
 
         guard !base.isEmpty else { throw ToolError.invalidFilename }
         return base + ".md"
-    }
-
-    /// Aynı adlı dosya varsa "ad (2).md", "ad (3).md"… dener.
-    private func uniqueURL(for filename: String) -> URL {
-        let base = String(filename.dropLast(".md".count))
-        var candidate = directory.appendingPathComponent(filename)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = directory.appendingPathComponent("\(base) (\(counter)).md")
-            counter += 1
-        }
-        return candidate
     }
 }

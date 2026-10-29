@@ -23,7 +23,7 @@ private func arguments(_ filename: String, _ content: String) throws -> String {
     #expect(output.content.contains("Dosya kaydedildi: Yapay Zeka Özeti.md"))
 }
 
-@Test func doesNotOverwriteExistingFile() async throws {
+@Test func updatesExistingFileInPlace() async throws {
     let directory = makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let tool = WriteFileTool(directory: directory)
@@ -31,8 +31,10 @@ private func arguments(_ filename: String, _ content: String) throws -> String {
     _ = try await tool.run(arguments: try arguments("not.md", "ilk"))
     let second = try await tool.run(arguments: try arguments("not.md", "ikinci"))
 
-    #expect(second.files.first?.lastPathComponent == "not (2).md")
-    #expect(try String(contentsOf: directory.appendingPathComponent("not.md"), encoding: .utf8) == "ilk")
+    #expect(second.files.first?.lastPathComponent == "not.md")
+    #expect(second.content.hasPrefix("Dosya güncellendi: not.md"))
+    #expect(try String(contentsOf: directory.appendingPathComponent("not.md"), encoding: .utf8) == "ikinci")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
 }
 
 @Test(arguments: [
