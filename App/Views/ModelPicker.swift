@@ -4,6 +4,14 @@ import SwiftUI
 /// Giriş kutusundaki model seçici; modeller sağlayıcıya göre gruplanır.
 struct ModelMenu: View {
     @Environment(AppSettings.self) private var settings
+    /// Sohbete özel model (ör. kestirmeden); varsa seçicide o gösterilir.
+    var overrideID: UUID?
+    /// Kullanıcı bir model seçince (sohbete özel model bırakılır).
+    var onSelect: () -> Void = {}
+
+    private var current: ModelProfile? {
+        settings.selection(for: overrideID)?.model
+    }
 
     var body: some View {
         Menu {
@@ -11,9 +19,10 @@ struct ModelMenu: View {
                 Section(provider.name) {
                     ForEach(provider.models) { model in
                         Button {
+                            onSelect()
                             settings.select(model.id)
                         } label: {
-                            if model.id == settings.selected?.model.id {
+                            if model.id == current?.id {
                                 Label(model.name, systemImage: "checkmark")
                             } else {
                                 Text(model.name)
@@ -23,7 +32,7 @@ struct ModelMenu: View {
                 }
             }
         } label: {
-            Chip(title: settings.selected?.model.name ?? L("Choose Model", "Model seç"), systemImage: "cpu")
+            Chip(title: current?.name ?? L("Choose Model", "Model seç"), systemImage: "cpu")
         }
         .disabled(settings.providers.allSatisfy(\.models.isEmpty))
     }
@@ -32,9 +41,10 @@ struct ModelMenu: View {
 /// Seçili model efor destekliyorsa görünen efor seçici.
 struct EffortMenu: View {
     @Environment(AppSettings.self) private var settings
+    var overrideID: UUID?
 
     var body: some View {
-        if let model = settings.selected?.model, model.supportsEffort {
+        if let model = settings.selection(for: overrideID)?.model, model.supportsEffort {
             Menu {
                 Picker(L("Effort", "Efor"), selection: Binding(
                     get: { model.effort },

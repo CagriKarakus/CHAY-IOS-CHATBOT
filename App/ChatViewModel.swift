@@ -99,6 +99,8 @@ final class ChatViewModel {
     private(set) var selectedSkillIDs: Set<UUID>?
     /// Düzenlenmekte olan kullanıcı mesajı; gönderilince o mesaj ve sonrası yeniden oluşturulur.
     private(set) var editingItemID: ChatItem.ID?
+    /// Bu sohbete özel model (ör. kestirmenin seçtiği); `nil` ise Ayarlar'daki seçili model.
+    private(set) var modelOverrideID: UUID?
 
     /// Uygulama şu an arka planda mı (ChatView bildirir).
     private var isInBackground = false
@@ -185,7 +187,12 @@ final class ChatViewModel {
     }
 
     /// Ekranı ve geçmişi temizler; önceki sohbet kayıtlı kalır (gizli sohbet hiç kaydedilmez).
-    func startNewChat(incognito: Bool = false, project: ProjectRecord? = nil) {
+    /// Kullanıcı model seçicisinden model değiştirince sohbete özel model bırakılır.
+    func clearModelOverride() {
+        modelOverrideID = nil
+    }
+
+    func startNewChat(incognito: Bool = false, project: ProjectRecord? = nil, modelOverride: UUID? = nil) {
         guard !isStreaming else { return }
         if isIncognito {
             AttachmentFiles.delete(items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
@@ -202,6 +209,7 @@ final class ChatViewModel {
         memoryEnabled = true
         selectedSkillIDs = nil
         editingItemID = nil
+        modelOverrideID = modelOverride
     }
 
     // MARK: - Düzenle / yeniden üret
@@ -250,7 +258,7 @@ final class ChatViewModel {
         items.removeSubrange(items.index(after: lastUserItem)...)
         history.removeSubrange(history.index(after: lastUserMessage)...)
         errorMessage = nil
-        if settings.selected?.model.generatesImages == true {
+        if settings.selection(for: modelOverrideID)?.model.generatesImages == true {
             generateImage(prompt: history[lastUserMessage].content ?? "", using: settings)
         } else {
             runTurn(using: settings)
@@ -299,6 +307,7 @@ final class ChatViewModel {
         projectID = record.projectID
         projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
         isIncognito = false
+        modelOverrideID = nil
         errorMessage = nil
     }
 
@@ -372,14 +381,14 @@ final class ChatViewModel {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
         do {
-            _ = try settings.configuration()
+            _ = try settings.configuration(modelID: modelOverrideID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
         }
 
         // Seçili model ekin türünü desteklemiyorsa gönderme (ör. model sonradan değiştirildiyse).
-        let model = settings.selected?.model
+        let model = settings.selection(for: modelOverrideID)?.model
         if pendingAttachments.contains(where: { $0.attachment.kind == .image }), model?.acceptsImages != true {
             errorMessage = L("This model doesn't accept images. Choose another model or remove the image.",
                              "Bu model görsel kabul etmiyor. Başka bir model seç ya da görseli kaldır.")
@@ -424,7 +433,7 @@ final class ChatViewModel {
     private func generateImage(prompt: String, using settings: AppSettings) {
         let configuration: LLMConfiguration
         do {
-            configuration = try settings.configuration()
+            configuration = try settings.configuration(modelID: modelOverrideID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
@@ -469,7 +478,7 @@ final class ChatViewModel {
     func retry(using settings: AppSettings) {
         guard canRetry else { return }
         errorMessage = nil
-        if settings.selected?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
+        if settings.selection(for: modelOverrideID)?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
             generateImage(prompt: prompt, using: settings)
         } else {
             runTurn(using: settings)
@@ -479,12 +488,12 @@ final class ChatViewModel {
     private func runTurn(using settings: AppSettings) {
         let configuration: LLMConfiguration
         do {
-            configuration = try settings.configuration()
+            configuration = try settings.configuration(modelID: modelOverrideID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
         }
-        guard let context, let selected = settings.selected else { return }
+        guard let context, let selected = settings.selection(for: modelOverrideID) else { return }
         currentModel = (selected.provider.id, selected.model.name)
         currentSearchProvider = settings.searchProvider
         let notes = SwiftDataNoteStore(context: context)

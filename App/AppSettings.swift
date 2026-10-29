@@ -95,7 +95,15 @@ final class AppSettings {
 
     /// Seçili model; seçim silinmişse ilk model.
     var selected: (provider: Provider, model: ModelProfile)? {
+        selection(for: nil)
+    }
+
+    /// Verilen model (ör. bir kestirmenin sohbetine özel); `nil` veya bulunamazsa seçili model.
+    func selection(for modelID: UUID?) -> (provider: Provider, model: ModelProfile)? {
         let all = providers.flatMap { provider in provider.models.map { (provider: provider, model: $0) } }
+        if let modelID, let match = all.first(where: { $0.model.id == modelID }) {
+            return match
+        }
         return all.first { $0.model.id == selectedModelID } ?? all.first
     }
 
@@ -103,8 +111,8 @@ final class AppSettings {
         (try? configuration()) != nil
     }
 
-    func configuration() throws -> LLMConfiguration {
-        guard let selected else { throw LLMError.missingModel }
+    func configuration(modelID: UUID? = nil) throws -> LLMConfiguration {
+        guard let selected = selection(for: modelID) else { throw LLMError.missingModel }
         return try LLMConfiguration(
             baseURL: selected.provider.baseURL,
             apiKey: apiKey(for: selected.provider.id),

@@ -215,11 +215,9 @@ struct ChatView: View {
         guard !viewModel.isStreaming, let request = ShortcutInbox.take() else { return }
         // Bildirim ekran ilk kez görünmeden gelebilir; bağlam hazır olsun.
         viewModel.attach(modelContext, usage: usage, skills: skills)
-        if let modelID = request.modelID {
-            settings.select(modelID)
-        }
         path = []
-        viewModel.startNewChat()
+        // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
+        viewModel.startNewChat(modelOverride: request.modelID)
         viewModel.input = request.prompt
         viewModel.send(using: settings)
     }
@@ -249,7 +247,10 @@ struct ChatView: View {
                                 selectText: { selectingText = SelectableTextItem(text: $0) },
                                 showImage: { viewedImage = ViewedImage(image: $0) },
                                 regenerate: item.id == viewModel.items.last?.id && viewModel.canRegenerate ? { modelID in
-                                    if let modelID { settings.select(modelID) }
+                                    if let modelID {
+                                        viewModel.clearModelOverride()
+                                        settings.select(modelID)
+                                    }
                                     viewModel.regenerate(using: settings)
                                 } : nil
                             )
@@ -341,8 +342,8 @@ struct ChatView: View {
             }
             HStack(spacing: 8) {
                 attachMenu
-                ModelMenu()
-                EffortMenu()
+                ModelMenu(overrideID: viewModel.modelOverrideID, onSelect: viewModel.clearModelOverride)
+                EffortMenu(overrideID: viewModel.modelOverrideID)
                 Spacer()
                 if viewModel.isStreaming {
                     Button {
@@ -395,7 +396,7 @@ struct ChatView: View {
 
     /// Ekler (modelin desteklediklerine göre) ve sohbete özel seçenekler: hafıza ve skill'ler.
     private var attachMenu: some View {
-        let model = settings.selected?.model
+        let model = settings.selection(for: viewModel.modelOverrideID)?.model
         return Menu {
             Section {
                 if model?.acceptsImages == true {
