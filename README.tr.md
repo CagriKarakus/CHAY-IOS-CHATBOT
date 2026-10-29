@@ -6,10 +6,11 @@
 
 ## İndirme
 
-Son sürüm **[v1.1](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. `.ipa` dosyasını [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasından indirip Sideloadly ile yükle ([iPhone'a yükleme](#iphonea-yükleme) bölümüne bak). Uygulama App Store'da yok.
+Son sürüm **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. `.ipa` dosyasını [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasından indirip Sideloadly ile yükle ([iPhone'a yükleme](#iphonea-yükleme) bölümüne bak). Uygulama App Store'da yok.
 
 | Sürüm | Öne çıkanlar |
 | --- | --- |
+| v1.2 | iOS 26+ için arka planda devam eden cevaplar, zamanlanmış görevler (bildirim veya Kestirmeler otomasyonu), zamanlanmış görevlerin yedeğe eklenmesi |
 | v1.1 | Claude tarzı kenar menüsü ve sohbet menüsü (sabitle, yeniden adlandır, paylaş, projeye taşı), cevap alternatifleri (‹ 1/2 ›), yedek modelli model başına token limitleri, tarayıcıyla girişli MCP bağlayıcıları, key gerektirmeyen DuckDuckGo araması |
 | v1.0 | İlk sağlam sürüm |
 
