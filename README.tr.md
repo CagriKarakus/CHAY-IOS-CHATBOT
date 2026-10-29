@@ -12,7 +12,8 @@
 - Sunucu bildiriyorsa **yetenekler `/models`'tan otomatik algılanır** (ör. Evren `modalities`, OpenRouter `architecture`); elle de ayarlanabilir
 - **Görsel, ses ve doküman**: fotoğraf (kamerayla da), ses kaydı, PDF, Word, Excel, PowerPoint ve metin dosyası eklenebilir; dokümanların metni telefonda çıkarıldığı için her modelle çalışır
 - `/images/generations` destekleyen modellerle **görsel üretme**, telefonun kendi sesleriyle **sesli okuma**
-- Mesajları **düzenleme ve yeniden üretme** (aynı veya başka bir modelle)
+- Mesajları **düzenleme ve yeniden üretme** (aynı veya başka bir modelle); önceki sürümler saklanır ve ‹ 1/2 › ile aralarında geçilir
+- **Token limitleri**: model başına günlük ve aylık limit (giriş + çıkış tokenları); limit dolunca istekler yenilenene kadar seçtiğin yedek modele gider, yedek seçilmediyse sorulur
 - **Uzun sohbetler**: bağlam büyüyünce eski araç sonuçları kısaltılır, eski mesajlar özetlenir
 
 ### Araçlar

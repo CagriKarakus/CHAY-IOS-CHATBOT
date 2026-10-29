@@ -12,7 +12,8 @@ A native iOS assistant that runs on **your own LLM API key**. It researches the 
 - **Capabilities detected automatically** from `/models` when the server reports them (e.g. Evren `modalities`, OpenRouter `architecture`) and adjustable by hand
 - **Images, audio and documents**: attach photos (or take them with the camera), voice recordings, PDF, Word, Excel, PowerPoint and text files; document text is extracted on the device, so it works with any model
 - **Image generation** with models that support `/images/generations`, and **read aloud** with the phone's built-in voices
-- **Edit and regenerate** messages, with the same or another model
+- **Edit and regenerate** messages, with the same or another model; earlier versions are kept and you can switch between them with ‹ 1/2 ›
+- **Token limits**: set daily and monthly limits (input + output tokens) per model; when one is reached, requests go to a fallback model you chose until the limit resets, or you are asked to pick one
 - **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
 
 ### Tools
