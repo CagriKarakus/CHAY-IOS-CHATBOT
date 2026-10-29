@@ -5,7 +5,7 @@ import SwiftUI
 
 struct ChatView: View {
     private enum Route: Hashable {
-        case documents, notes
+        case conversations, documents, notes
     }
 
     @Environment(AppSettings.self) private var settings
@@ -22,12 +22,19 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 messageList
                 if let errorMessage = viewModel.errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(Palette.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if viewModel.canRetry {
+                            Button("Tekrar dene") { viewModel.retry(using: settings) }
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Palette.blue)
+                        }
+                    }
+                    .font(.footnote)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
                 }
                 composer
             }
@@ -39,6 +46,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
+                        Button("Sohbetler", systemImage: "bubble.left.and.bubble.right") { path.append(.conversations) }
                         Button("Dokümanlar", systemImage: "folder") { path.append(.documents) }
                         Button("Hafıza", systemImage: "brain") { path.append(.notes) }
                         Button("Ayarlar", systemImage: "slider.horizontal.3") { showingSettings = true }
@@ -62,6 +70,15 @@ struct ChatView: View {
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
+                case .conversations:
+                    ConversationsView(
+                        currentID: viewModel.conversationID,
+                        open: { record in
+                            viewModel.open(record)
+                            path = []
+                        },
+                        deletedCurrent: { viewModel.startNewChat() }
+                    )
                 case .documents: DocumentsView()
                 case .notes: NotesView()
                 }
@@ -96,6 +113,7 @@ struct ChatView: View {
                 }
             }
             .onAppear {
+                viewModel.attach(modelContext)
                 if !settings.isConfigured {
                     showingSettings = true
                 }
@@ -181,7 +199,7 @@ struct ChatView: View {
                 Spacer()
                 Button {
                     inputFocused = false
-                    viewModel.send(using: settings, notes: SwiftDataNoteStore(context: modelContext))
+                    viewModel.send(using: settings)
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.body.weight(.semibold))
@@ -260,9 +278,10 @@ private struct AssistantMessage: View {
                     .tint(Palette.textMuted)
             }
 
-            ForEach(item.files, id: \.self) { url in
-                FileCard(document: DocumentFile(url: url)) {
-                    openDocument(DocumentFile(url: url))
+            ForEach(item.files, id: \.self) { name in
+                let document = DocumentFile(url: DocumentFile.directory.appendingPathComponent(name))
+                FileCard(document: document) {
+                    openDocument(document)
                 }
             }
 

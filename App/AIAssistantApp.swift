@@ -12,6 +12,6 @@ struct AIAssistantApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Palette.blue)
         }
-        .modelContainer(for: NoteRecord.self)
+        .modelContainer(for: [NoteRecord.self, ConversationRecord.self])
     }
 }

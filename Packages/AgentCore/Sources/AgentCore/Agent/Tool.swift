@@ -51,7 +51,7 @@ public struct ToolOutput: Equatable, Sendable {
     }
 }
 
-public struct Source: Hashable, Sendable {
+public struct Source: Hashable, Codable, Sendable {
     public let title: String
     public let url: URL
 
