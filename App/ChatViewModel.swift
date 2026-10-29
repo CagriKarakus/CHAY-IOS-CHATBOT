@@ -811,8 +811,10 @@ final class ChatViewModel {
             continuedTurn?.advance()
         case let .reasoning(thought):
             items[index].reasoning = (items[index].reasoning ?? "") + thought
+            continuedTurn?.advance()
         case let .preparingTool(name, characters):
             items[index].preparing = PreparingTool(toolName: name, characters: characters)
+            continuedTurn?.advance()
         case let .toolStarted(callID, name, detail):
             items[index].preparing = nil
             // Sonraki adımın düşüncesi öncekiyle birleşmesin.

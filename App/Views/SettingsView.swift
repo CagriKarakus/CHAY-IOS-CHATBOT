@@ -89,6 +89,18 @@ struct SettingsView: View {
                 .listRowBackground(Palette.surface)
 
                 Section {
+                    Text(ContinuedTurn.lastStatus ?? L("No answer has run yet.", "Henüz bir cevap çalışmadı."))
+                        .font(.footnote)
+                        .foregroundStyle(Palette.text)
+                } header: {
+                    header(L("Background answers", "Arka planda cevaplar"))
+                } footer: {
+                    footer(L("Result of the last attempt to keep an answer running after leaving the app (iOS 26 and later). \"Started\" means iOS accepted it.",
+                             "Bir cevabı uygulamadan çıkınca da sürdürme denemesinin son sonucu (iOS 26 ve sonrası). \"Başlatıldı\" iOS'un kabul ettiği anlamına gelir."))
+                }
+                .listRowBackground(Palette.surface)
+
+                Section {
                     Picker(L("Appearance", "Görünüm"), selection: $appearance) {
                         ForEach(Appearance.allCases) { option in
                             Text(option.title).tag(option)

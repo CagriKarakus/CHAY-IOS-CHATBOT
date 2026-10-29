@@ -8,6 +8,17 @@ import Foundation
 final class ContinuedTurn {
     /// Info.plist'te `BGTaskSchedulerPermittedIdentifiers`: "dev.cagri.aiassistant.turn.*".
     private static let prefix = "dev.cagri.aiassistant.turn."
+    private static let statusKey = "background.continuedStatus"
+
+    /// Son denemenin sonucu (Ayarlar'da gösterilir; görev başlamazsa nedenini görmek için).
+    static var lastStatus: String? {
+        UserDefaults.standard.string(forKey: statusKey)
+    }
+
+    private static func record(_ status: String) {
+        let time = Date.now.formatted(date: .abbreviated, time: .shortened)
+        UserDefaults.standard.set("\(time): \(status)", forKey: statusKey)
+    }
 
     private var task: BGTask?
     /// Görev iOS tarafından başlatılmadan cevap bittiyse sonucu.
@@ -17,13 +28,19 @@ final class ContinuedTurn {
 
     /// Görevi başlatır (uygulama öndeyken çağrılmalı). iOS 26 öncesinde veya iOS reddederse `nil`.
     static func start(title: String) -> ContinuedTurn? {
-        guard #available(iOS 26, *) else { return nil }
+        guard #available(iOS 26, *) else {
+            record(L("Not available before iOS 26", "iOS 26 öncesinde kullanılamaz"))
+            return nil
+        }
         let turn = ContinuedTurn()
         let identifier = prefix + UUID().uuidString
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
             MainActor.assumeIsolated { turn.attach(task) }
         }
-        guard registered else { return nil }
+        guard registered else {
+            record(L("iOS refused to register the task", "iOS görevi kaydetmeyi reddetti"))
+            return nil
+        }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
             title: title,
@@ -34,8 +51,12 @@ final class ContinuedTurn {
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
+            let code = (error as NSError).code
+            record(L("iOS didn't start the task (error \(code): \(error.localizedDescription))",
+                     "iOS görevi başlatmadı (hata \(code): \(error.localizedDescription))"))
             return nil
         }
+        record(L("Started", "Başlatıldı"))
         return turn
     }
 
@@ -47,11 +68,22 @@ final class ContinuedTurn {
         self.task = task
         task.expirationHandler = { [weak self] in
             // iOS veya kullanıcı durdurdu: istek kesilince cevap uygulamaya dönünce sürer.
-            Task { @MainActor in self?.finish(success: false) }
+            Task { @MainActor in
+                Self.record(L("Stopped by iOS or from the progress view", "iOS veya ilerleme göstergesinden durduruldu"))
+                self?.finish(success: false)
+            }
         }
         if #available(iOS 26, *), let continued = task as? BGContinuedProcessingTask {
             continued.progress.totalUnitCount = 100
             continued.progress.completedUnitCount = completed
+        }
+        // İlerleme bildirmeyen görevleri iOS durdurur; model uzun süre sessiz kalsa da (düşünme,
+        // uzun sayfa yazma, yavaş araç) ilerleme düzenli artsın.
+        Task { [weak self] in
+            while let self, self.task != nil {
+                self.advance()
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
