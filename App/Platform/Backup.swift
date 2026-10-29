@@ -69,7 +69,7 @@ enum BackupService {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("AIAssistant-backup-\(formatter.string(from: .now)).json")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("CHAY-backup-\(formatter.string(from: .now)).json")
         try encoder.encode(backup).write(to: url, options: .atomic)
         return url
     }

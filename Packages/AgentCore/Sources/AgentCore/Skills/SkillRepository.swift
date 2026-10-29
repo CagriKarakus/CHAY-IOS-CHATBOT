@@ -68,7 +68,7 @@ public enum SkillRepository {
         let response = try await transport.send(HTTPRequest(
             url: URL(string: link)!,
             method: "GET",
-            headers: ["Accept": "application/vnd.github+json", "User-Agent": "AIAssistant-iOS"],
+            headers: ["Accept": "application/vnd.github+json", "User-Agent": "CHAY-iOS"],
             body: nil
         ))
         switch response.statusCode {

@@ -437,7 +437,7 @@ struct ChatView: View {
                 let granted = try await recorder.start()
                 if !granted {
                     viewModel.errorMessage = L("Microphone access is off. Turn it on in Settings > CHAY.",
-                                               "Mikrofon izni kapalı. Ayarlar > CHAY'den açabilirsin.")
+                                               "Mikrofon izni kapalı. Ayarlar > CHAY'dan açabilirsin.")
                 }
             } catch {
                 viewModel.errorMessage = userFacingMessage(for: error)
