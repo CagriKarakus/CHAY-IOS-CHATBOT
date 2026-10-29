@@ -24,10 +24,12 @@ public struct ModelInfo: Equatable, Sendable {
         inputModalities.map { $0.contains { $0.lowercased() == "audio" } }
     }
 
-    /// Görsel üreten model mi; çıktı modalitesi veya görev adından anlaşılır.
+    /// Sadece görsel üreten (`/images/generations` ile çalışan) model mi; çıktı modalitesi veya görev adından anlaşılır.
+    /// Hem metin hem görsel üreten modeller (ör. OpenRouter'daki Gemini) sohbet modeli sayılır.
     public var generatesImages: Bool? {
         if let outputModalities {
-            return outputModalities.contains { $0.lowercased() == "image" }
+            let outputs = Set(outputModalities.map { $0.lowercased() })
+            return outputs.contains("image") && !outputs.contains("text")
         }
         guard let task = task?.lowercased() else { return nil }
         return task.contains("image") && !task.contains("to-text")

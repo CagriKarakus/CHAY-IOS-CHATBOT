@@ -32,7 +32,12 @@ private let evrenModels = """
 
     #expect(model.acceptsImages == true)
     #expect(model.acceptsAudio == true)
-    #expect(model.generatesImages == true)
+    // Metin de üretiyor: sohbet modeli olarak kalır.
+    #expect(model.generatesImages == false)
+}
+
+@Test func imageOnlyOutputIsImageGenerator() {
+    #expect(ModelInfo(id: "flux", outputModalities: ["image"]).generatesImages == true)
 }
 
 @Test(arguments: [("image_generation", true), ("text-to-image", true), ("chat", false), ("image-to-text", false)])
