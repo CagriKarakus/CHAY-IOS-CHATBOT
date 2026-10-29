@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Xcode sürümü
         run: xcodebuild -version
@@ -42,7 +42,7 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/AIAssistant.app Payload/
           zip -qry AIAssistant.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: AIAssistant-ipa
           path: AIAssistant.ipa
