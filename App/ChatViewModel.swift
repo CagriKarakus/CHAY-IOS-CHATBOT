@@ -307,7 +307,7 @@ final class ChatViewModel {
         projectID = record.projectID
         projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
         isIncognito = false
-        modelOverrideID = nil
+        modelOverrideID = content.modelID
         errorMessage = nil
     }
 
@@ -672,7 +672,8 @@ final class ChatViewModel {
             summary: summary,
             lastPromptTokens: lastPromptTokens,
             memoryEnabled: memoryEnabled,
-            skillIDs: selectedSkillIDs.map(Array.init)
+            skillIDs: selectedSkillIDs.map(Array.init),
+            modelID: modelOverrideID
         )
 
         if let conversationID,

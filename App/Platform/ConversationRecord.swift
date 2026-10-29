@@ -14,6 +14,8 @@ struct ConversationContent: Codable {
     var memoryEnabled: Bool?
     /// Sohbete özel skill seçimi (`nil` = varsayılanlar).
     var skillIDs: [UUID]?
+    /// Sohbete özel model (ör. kestirmenin seçtiği); `nil` ise Ayarlar'daki seçili model.
+    var modelID: UUID?
 }
 
 /// Sohbetin SwiftData kaydı. İçerik tek bir JSON alanında tutulur; şema değişmeden mesaj yapısı gelişebilir.
