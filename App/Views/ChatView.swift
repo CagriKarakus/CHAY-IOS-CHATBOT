@@ -219,18 +219,31 @@ struct ChatView: View {
         // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
         viewModel.startNewChat(modelOverride: request.modelID)
         // Kestirmeden gelen dosyalar: görseller görsel olarak, diğerleri metni çıkarılarak eklenir.
+        var unreadable: [String] = []
         for file in request.files ?? [] {
             let url = ShortcutInbox.directory.appendingPathComponent(file.storedName)
             defer { try? FileManager.default.removeItem(at: url) }
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = try? Data(contentsOf: url) else {
+                unreadable.append(file.originalName)
+                continue
+            }
             if UIImage(data: data) != nil {
                 viewModel.addImage(data)
-            } else if let text = extractDocumentText(from: url) {
+            } else if let text = extractDocumentText(from: url), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 viewModel.addDocument(text: text, name: file.originalName)
+            } else {
+                unreadable.append(file.originalName)
             }
         }
         viewModel.input = request.prompt
         viewModel.send(using: settings)
+        // Gönderim hata mesajını temizlediği için okunamayan dosyalar en son bildirilir.
+        if !unreadable.isEmpty {
+            let note = L("Couldn't read the file: \(unreadable.joined(separator: ", "))",
+                         "Dosya okunamadı: \(unreadable.joined(separator: ", "))")
+            viewModel.errorMessage = [viewModel.errorMessage, note].compactMap { $0 }.joined(separator: "
+")
+        }
     }
 
     private var messageList: some View {
