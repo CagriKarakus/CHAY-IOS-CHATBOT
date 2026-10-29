@@ -77,7 +77,7 @@ struct ConversationsView: View {
                 deletedCurrent()
             }
             // Sohbetteki görsellerin tam boyutlu kopyalarını da sil.
-            AttachmentFiles.delete(conversation.content.items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
+            AttachmentFiles.delete(conversation.content.allItems.flatMap { $0.attachments ?? [] }.compactMap(\.file))
             context.delete(conversation)
         }
         try? context.save()

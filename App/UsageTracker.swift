@@ -22,6 +22,14 @@ final class UsageTracker {
         }
     }
 
+    /// Bir modelin içinde bulunulan gün ve aydaki tokenları (limitler için).
+    private struct PeriodUsage: Codable {
+        var day = ""
+        var dayTokens = 0
+        var month = ""
+        var monthTokens = 0
+    }
+
     private struct Snapshot: Codable {
         /// Anahtar: "<provider id>|<model adı>".
         var models: [String: Totals] = [:]
@@ -30,6 +38,8 @@ final class UsageTracker {
         var otherSearches: [String: Int]?
         /// Sağlayıcının bildirdiği günlük kalan token (anahtar: provider id); eski kayıtlarda yok.
         var dailyRemaining: [String: DailyRemaining]?
+        /// Model başına günlük/aylık token (anahtar: model id); eski kayıtlarda yok.
+        var periods: [String: PeriodUsage]?
         var since = Date()
     }
 
@@ -64,13 +74,56 @@ final class UsageTracker {
             .reduce(Totals(), +)
     }
 
-    func record(_ usage: TokenUsage, providerID: UUID, model: String) {
+    func record(_ usage: TokenUsage, providerID: UUID, model: String, modelID: UUID? = nil) {
         var totals = totals(providerID: providerID, model: model)
         totals.promptTokens += usage.promptTokens
         totals.completionTokens += usage.completionTokens
         totals.requests += 1
         snapshot.models[Self.key(providerID, model)] = totals
+
+        if let modelID {
+            let now = Date.now
+            var period = snapshot.periods?[modelID.uuidString] ?? PeriodUsage()
+            if period.day != Self.dayKey(now) {
+                period.day = Self.dayKey(now)
+                period.dayTokens = 0
+            }
+            if period.month != Self.monthKey(now) {
+                period.month = Self.monthKey(now)
+                period.monthTokens = 0
+            }
+            period.dayTokens += usage.promptTokens + usage.completionTokens
+            period.monthTokens += usage.promptTokens + usage.completionTokens
+            snapshot.periods = snapshot.periods ?? [:]
+            snapshot.periods?[modelID.uuidString] = period
+        }
         save()
+    }
+
+    /// Modelin bugün veya bu ay kullandığı token (giriş + çıkış).
+    func tokens(modelID: UUID, in period: TokenLimitPeriod, now: Date = .now) -> Int {
+        guard let usage = snapshot.periods?[modelID.uuidString] else { return 0 }
+        switch period {
+        case .day: return usage.day == Self.dayKey(now) ? usage.dayTokens : 0
+        case .month: return usage.month == Self.monthKey(now) ? usage.monthTokens : 0
+        }
+    }
+
+    /// Modelin dolmuş limiti (önce günlük); limit yoksa veya dolmadıysa `nil`.
+    func exceededLimit(of model: ModelProfile) -> TokenLimitPeriod? {
+        if let limit = model.dailyTokenLimit, tokens(modelID: model.id, in: .day) >= limit { return .day }
+        if let limit = model.monthlyTokenLimit, tokens(modelID: model.id, in: .month) >= limit { return .month }
+        return nil
+    }
+
+    private static func dayKey(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    private static func monthKey(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", parts.year ?? 0, parts.month ?? 0)
     }
 
     struct DailyRemaining: Codable, Equatable {

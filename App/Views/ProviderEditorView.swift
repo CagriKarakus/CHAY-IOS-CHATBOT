@@ -312,6 +312,8 @@ private struct FetchedModels: Identifiable {
 /// Modelin desteklediği özellikler; sunucu bildirmediyse burada elle ayarlanır.
 private struct ModelSettingsView: View {
     @Binding var model: ModelProfile
+    @Environment(AppSettings.self) private var settings
+    @Environment(UsageTracker.self) private var usage
 
     var body: some View {
         Form {
@@ -335,6 +337,29 @@ private struct ModelSettingsView: View {
                 ))
             }
             .listRowBackground(Palette.surface)
+
+            Section {
+                limitField(L("Daily limit", "Günlük limit"), value: $model.dailyTokenLimit,
+                           used: L("\(usage.tokens(modelID: model.id, in: .day).formatted()) used today",
+                                   "Bugün \(usage.tokens(modelID: model.id, in: .day).formatted()) kullanıldı"))
+                limitField(L("Monthly limit", "Aylık limit"), value: $model.monthlyTokenLimit,
+                           used: L("\(usage.tokens(modelID: model.id, in: .month).formatted()) used this month",
+                                   "Bu ay \(usage.tokens(modelID: model.id, in: .month).formatted()) kullanıldı"))
+                Picker(L("When the limit is reached", "Limit dolunca"), selection: $model.limitFallbackID) {
+                    Text(L("Ask me", "Bana sor")).tag(UUID?.none)
+                    ForEach(settings.allModels.filter { $0.model.id != model.id }) { option in
+                        Text("\(option.model.name) · \(option.provider.name)").tag(Optional(option.model.id))
+                    }
+                }
+            } header: {
+                header(L("Token limit", "Token limiti"))
+            } footer: {
+                footer(L(
+                    "Input and output tokens are counted from this device; days and months follow your calendar. When a limit is reached, requests go to the chosen model until it resets, and the selected model stays the same. Leave empty for no limit.",
+                    "Bu cihazdan giden giriş ve çıkış tokenları sayılır; gün ve ay takvime göredir. Limit dolunca istekler yenilenene kadar seçilen modele gider, seçili model değişmez. Limitsiz için boş bırak."
+                ))
+            }
+            .listRowBackground(Palette.surface)
         }
         .foregroundStyle(Palette.textBright)
         .tint(Palette.blue)
@@ -344,6 +369,27 @@ private struct ModelSettingsView: View {
         .background(Palette.background)
         .navigationTitle(model.name)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func limitField(_ title: String, value: Binding<Int?>, used: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                TextField(L("No limit", "Limitsiz"), text: Binding(
+                    get: { value.wrappedValue.map(String.init) ?? "" },
+                    set: { text in
+                        let number = Int(text.filter(\.isNumber))
+                        value.wrappedValue = number.flatMap { $0 > 0 ? $0 : nil }
+                    }
+                ), prompt: prompt(L("No limit", "Limitsiz")))
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+            }
+            Text(used)
+                .font(.caption)
+                .foregroundStyle(Palette.textMuted)
+        }
     }
 
     private func flag(_ keyPath: WritableKeyPath<ModelProfile, Bool?>) -> Binding<Bool> {

@@ -25,6 +25,11 @@ struct ModelProfile: Codable, Identifiable, Hashable {
     var generatesImages: Bool?
     /// Bağlam penceresi (token); sunucunun model kartından gelir, sıkıştırma eşiği için.
     var contextLength: Int?
+    /// Token limitleri (giriş + çıkış); `nil` = limitsiz.
+    var dailyTokenLimit: Int?
+    var monthlyTokenLimit: Int?
+    /// Limit dolunca istekleri karşılayan model; `nil` ise o an kullanıcıya sorulur.
+    var limitFallbackID: UUID?
 
     /// Sunucunun bildirdiği yetenekleri uygular. `overwrite: false` ise sadece henüz ayarlanmamış olanları doldurur.
     mutating func apply(_ info: ModelInfo, overwrite: Bool = true) {
@@ -33,6 +38,25 @@ struct ModelProfile: Codable, Identifiable, Hashable {
         if let value = info.generatesImages, overwrite || generatesImages == nil { generatesImages = value }
         if let value = info.supportsReasoningEffort, overwrite || !supportsEffort { supportsEffort = value }
         if let value = info.contextLength, overwrite || contextLength == nil { contextLength = value }
+    }
+}
+
+/// Seçim listelerinde bir model ve sağlayıcısı.
+struct ModelOption: Identifiable {
+    let provider: Provider
+    let model: ModelProfile
+    var id: UUID { model.id }
+}
+
+/// Token limitinin dönemi; takvim günü ve ayı (cihazın saat dilimiyle).
+enum TokenLimitPeriod: String, Codable {
+    case day, month
+
+    var title: String {
+        switch self {
+        case .day: L("daily", "günlük")
+        case .month: L("monthly", "aylık")
+        }
     }
 }
 
@@ -142,6 +166,21 @@ final class AppSettings {
             }
         }
         persistProviders()
+    }
+
+    /// Limiti dolan modelin yedeğini kaydeder (limit anında kullanıcının seçtiği model).
+    func setLimitFallback(_ fallbackID: UUID, for modelID: UUID) {
+        for providerIndex in providers.indices {
+            if let modelIndex = providers[providerIndex].models.firstIndex(where: { $0.id == modelID }) {
+                providers[providerIndex].models[modelIndex].limitFallbackID = fallbackID
+            }
+        }
+        persistProviders()
+    }
+
+    /// Tüm sağlayıcılardaki modeller.
+    var allModels: [ModelOption] {
+        providers.flatMap { provider in provider.models.map { ModelOption(provider: provider, model: $0) } }
     }
 
     // MARK: - Düzenleme

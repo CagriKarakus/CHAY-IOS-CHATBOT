@@ -18,6 +18,13 @@ struct ConversationContent: Codable {
     var modelID: UUID?
     /// Sohbete özel bağlayıcı seçimi (`nil` = varsayılanlar).
     var connectorIDs: [UUID]?
+    /// Yeniden üretme ve düzenlemeyle oluşan alternatif devamlar.
+    var branches: [ChatBranch]?
+
+    /// Gösterilen ve alternatiflerdeki tüm ekran mesajları (ek dosyalarını silmek için).
+    var allItems: [ChatItem] {
+        items + (branches ?? []).flatMap { $0.variants.flatMap(\.items) }
+    }
 }
 
 /// Sohbetin SwiftData kaydı. İçerik tek bir JSON alanında tutulur; şema değişmeden mesaj yapısı gelişebilir.

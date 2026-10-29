@@ -30,6 +30,35 @@ struct ChatItem: Identifiable, Codable {
     var reasoning: String?
     /// Model bir aracın argümanlarını yazarken (ör. uzun artifact) gösterilen ilerleme.
     var preparing: PreparingTool?
+    /// Cevabın üstünde gösterilen not (ör. token limiti dolduğu için yedek modelin kullanıldığı).
+    var notice: String?
+}
+
+/// Bir noktadan sonraki alternatif devamlar; yeniden üretme veya mesaj düzenleme ile oluşur.
+struct ChatBranch: Codable {
+    /// Çatallanmadan önceki son ekran mesajı; sohbetin başındaysa `nil`.
+    let anchorID: UUID?
+    /// Her alternatifin o noktadan sonraki mesajları. Gösterilenin güncel hali `items`/`history`'dedir;
+    /// buradaki kopyası başka bir alternatife geçilirken güncellenir.
+    var variants: [ChatVariant]
+    var selected: Int
+}
+
+struct ChatVariant: Codable {
+    var items: [ChatItem]
+    var history: [ChatMessage]
+}
+
+/// Token limiti dolan model için yedek seçimi bekleyen istek.
+struct LimitPrompt: Identifiable {
+    enum Action {
+        case send, regenerate, retry
+    }
+
+    let id = UUID()
+    let model: ModelProfile
+    let period: TokenLimitPeriod
+    let action: Action
 }
 
 struct AttachmentPreview: Codable, Hashable {
@@ -85,6 +114,8 @@ final class ChatViewModel {
     private(set) var items: [ChatItem] = []
     private(set) var isStreaming = false
     private(set) var pendingApproval: PendingApproval?
+    /// Limiti dolan model için kullanıcıdan yedek bekleniyor.
+    private(set) var limitPrompt: LimitPrompt?
     private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
     private(set) var conversationID: UUID?
@@ -124,6 +155,12 @@ final class ChatViewModel {
     /// Sıkıştırılan eski mesajların özeti; system prompt'a eklenir.
     private var summary: String?
     private var lastPromptTokens: Int?
+    /// Yeniden üretme ve düzenlemeyle oluşan alternatif devamlar.
+    private var branches: [ChatBranch] = []
+    /// Bu istekte kullanılan model (limit dolduysa yedeği); `nil` ise sohbetin/Ayarlar'ın seçili modeli.
+    private var turnModelID: UUID?
+    /// Yedek modele geçildiyse cevabın üstüne yazılacak not.
+    private var limitNotice: String?
     /// Henüz `.message` olarak gelmemiş, akmakta olan adımın metni (durdurulursa geçmişe eklenir).
     private var pendingStepText = ""
     private var turnTask: Task<Void, Never>?
@@ -133,7 +170,7 @@ final class ChatViewModel {
     private var skillLibrary: SkillLibrary?
     private var connectorLibrary: ConnectorLibrary?
     /// Bu turdaki aramaların sayılacağı servis.
-    private var currentModel: (providerID: UUID, name: String)?
+    private var currentModel: (providerID: UUID, name: String, id: UUID)?
 
     var canSend: Bool {
         !isStreaming && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
@@ -202,6 +239,7 @@ final class ChatViewModel {
         }
         items = []
         history = []
+        branches = []
         summary = nil
         lastPromptTokens = nil
         conversationID = nil
@@ -249,6 +287,109 @@ final class ChatViewModel {
         pendingAttachments = []
     }
 
+    // MARK: - Alternatifler
+
+    /// `p` konumundan başlayan devamın geçmişteki başlangıcı; bağlam sıkıştırmasıyla özetlendiyse `nil`.
+    private func historyStart(ofTailAt p: Int) -> Int? {
+        guard items.indices.contains(p) else { return nil }
+        if items[p].role == .user { return historyIndex(ofUserItem: items[p].id) }
+        guard p > 0, items[p - 1].role == .user, let index = historyIndex(ofUserItem: items[p - 1].id) else { return nil }
+        return index + 1
+    }
+
+    /// `p`'den sonrasını (ekran) ve `h`'den sonrasını (geçmiş) bir alternatif olarak saklayıp kaldırır;
+    /// yeni devam bunların yerine gelir.
+    private func fork(itemIndex p: Int, historyIndex h: Int) {
+        let anchor = p > 0 ? items[p - 1].id : nil
+        let tail = ChatVariant(items: Array(items[p...]), history: Array(history[h...]))
+        if let index = branches.firstIndex(where: { $0.anchorID == anchor }) {
+            // Gösterilen devam boşsa (ör. önceki deneme hata verdi) aynı yer yeniden kullanılır.
+            if !tail.items.isEmpty {
+                branches[index].variants[branches[index].selected] = tail
+                branches[index].variants.append(ChatVariant(items: [], history: []))
+                branches[index].selected = branches[index].variants.count - 1
+            }
+        } else if !tail.items.isEmpty {
+            branches.append(ChatBranch(anchorID: anchor, variants: [tail, ChatVariant(items: [], history: [])], selected: 1))
+        }
+        items.removeSubrange(p...)
+        history.removeSubrange(h...)
+        lastPromptTokens = nil
+    }
+
+    /// Mesaj bir alternatifin başıysa kaçıncı olduğu ve toplam sayı.
+    func variantPosition(of item: ChatItem) -> (current: Int, count: Int)? {
+        guard let p = items.firstIndex(where: { $0.id == item.id }) else { return nil }
+        let anchor = p > 0 ? items[p - 1].id : nil
+        guard let branch = branches.first(where: { $0.anchorID == anchor }), branch.variants.count > 1 else { return nil }
+        return (branch.selected + 1, branch.variants.count)
+    }
+
+    /// Önceki (`-1`) veya sonraki (`+1`) alternatife geçer.
+    func showVariant(_ step: Int, at item: ChatItem) {
+        guard !isStreaming,
+              let p = items.firstIndex(where: { $0.id == item.id }),
+              let h = historyStart(ofTailAt: p)
+        else { return }
+        let anchor = p > 0 ? items[p - 1].id : nil
+        guard let index = branches.firstIndex(where: { $0.anchorID == anchor }) else { return }
+        let target = branches[index].selected + step
+        guard branches[index].variants.indices.contains(target) else { return }
+
+        branches[index].variants[branches[index].selected] = ChatVariant(items: Array(items[p...]), history: Array(history[h...]))
+        let next = branches[index].variants[target]
+        items.replaceSubrange(p..., with: next.items)
+        history.replaceSubrange(h..., with: next.history)
+        branches[index].selected = target
+        lastPromptTokens = nil
+        errorMessage = nil
+        if editingItemID != nil { cancelEditing() }
+        persist()
+    }
+
+    // MARK: - Token limitleri
+
+    /// Bu istekte kullanılacak modeli belirler: model token limitini doldurduysa yedeğine geçer.
+    /// Yedek seçilmemişse kullanıcıya sorulur ve `false` döner.
+    private func resolveTurnModel(for action: LimitPrompt.Action, using settings: AppSettings) -> Bool {
+        limitNotice = nil
+        turnModelID = modelOverrideID
+        guard var current = settings.selection(for: modelOverrideID) else { return true }
+        var visited: Set<UUID> = []
+        while let period = usageTracker?.exceededLimit(of: current.model) {
+            visited.insert(current.model.id)
+            guard let fallbackID = current.model.limitFallbackID, !visited.contains(fallbackID),
+                  let next = settings.selection(for: fallbackID), next.model.id == fallbackID
+            else {
+                limitPrompt = LimitPrompt(model: current.model, period: period, action: action)
+                return false
+            }
+            limitNotice = L(
+                "\(current.model.name) reached its \(period.title) token limit, so \(next.model.name) answered.",
+                "\(current.model.name) \(period.title) token limitini doldurdu; cevabı \(next.model.name) verdi."
+            )
+            current = next
+        }
+        turnModelID = current.model.id
+        return true
+    }
+
+    /// Limit anında seçilen modeli yedek olarak kaydeder ve bekleyen isteği sürdürür.
+    func chooseLimitFallback(_ fallbackID: UUID, using settings: AppSettings) {
+        guard let prompt = limitPrompt else { return }
+        limitPrompt = nil
+        settings.setLimitFallback(fallbackID, for: prompt.model.id)
+        switch prompt.action {
+        case .send: send(using: settings)
+        case .regenerate: regenerate(using: settings)
+        case .retry: retry(using: settings)
+        }
+    }
+
+    func dismissLimitPrompt() {
+        limitPrompt = nil
+    }
+
     var canRegenerate: Bool {
         !isStreaming && items.last?.role == .assistant && history.contains { $0.role == .user }
     }
@@ -257,12 +398,19 @@ final class ChatViewModel {
     func regenerate(using settings: AppSettings) {
         guard canRegenerate,
               let lastUserItem = items.lastIndex(where: { $0.role == .user }),
-              let lastUserMessage = history.lastIndex(where: { $0.role == .user })
+              let lastUserMessage = history.lastIndex(where: { $0.role == .user }),
+              resolveTurnModel(for: .regenerate, using: settings)
         else { return }
-        items.removeSubrange(items.index(after: lastUserItem)...)
-        history.removeSubrange(history.index(after: lastUserMessage)...)
+        do {
+            _ = try settings.configuration(modelID: turnModelID)
+        } catch {
+            errorMessage = userFacingMessage(for: error)
+            return
+        }
+        // Önceki cevap silinmez; ‹ › ile geri getirilebilen bir alternatif olarak saklanır.
+        fork(itemIndex: lastUserItem + 1, historyIndex: lastUserMessage + 1)
         errorMessage = nil
-        if settings.selection(for: modelOverrideID)?.model.generatesImages == true {
+        if settings.selection(for: turnModelID)?.model.generatesImages == true {
             generateImage(prompt: history[lastUserMessage].content ?? "", using: settings)
         } else {
             runTurn(using: settings)
@@ -326,6 +474,7 @@ final class ChatViewModel {
         memoryEnabled = content.memoryEnabled ?? true
         selectedSkillIDs = content.skillIDs.map(Set.init)
         selectedConnectorIDs = content.connectorIDs.map(Set.init)
+        branches = content.branches ?? []
         conversationID = record.id
         projectID = record.projectID
         projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
@@ -402,16 +551,16 @@ final class ChatViewModel {
     func send(using settings: AppSettings) {
         TurnNotifications.requestPermissionIfNeeded()
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSend else { return }
+        guard canSend, resolveTurnModel(for: .send, using: settings) else { return }
         do {
-            _ = try settings.configuration(modelID: modelOverrideID)
+            _ = try settings.configuration(modelID: turnModelID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
         }
 
         // Seçili model ekin türünü desteklemiyorsa gönderme (ör. model sonradan değiştirildiyse).
-        let model = settings.selection(for: modelOverrideID)?.model
+        let model = settings.selection(for: turnModelID)?.model
         if pendingAttachments.contains(where: { $0.attachment.kind == .image }), model?.acceptsImages != true {
             errorMessage = L("This model doesn't accept images. Choose another model or remove the image.",
                              "Bu model görsel kabul etmiyor. Başka bir model seç ya da görseli kaldır.")
@@ -423,13 +572,11 @@ final class ChatViewModel {
             return
         }
 
-        // Düzenlenen mesaj: o mesaj ve sonrası silinir, yeni hali gönderilir.
+        // Düzenlenen mesaj: o mesaj ve sonrası bir alternatif olarak saklanır, yeni hali gönderilir.
         if let editing = editingItemID {
             if let itemIndex = items.firstIndex(where: { $0.id == editing }),
                let messageIndex = historyIndex(ofUserItem: editing) {
-                items.removeSubrange(itemIndex...)
-                history.removeSubrange(messageIndex...)
-                lastPromptTokens = nil
+                fork(itemIndex: itemIndex, historyIndex: messageIndex)
             }
             editingItemID = nil
         }
@@ -456,12 +603,13 @@ final class ChatViewModel {
     private func generateImage(prompt: String, using settings: AppSettings) {
         let configuration: LLMConfiguration
         do {
-            configuration = try settings.configuration(modelID: modelOverrideID)
+            configuration = try settings.configuration(modelID: turnModelID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
         }
         var reply = ChatItem(role: .assistant, text: "")
+        reply.notice = limitNotice
         reply.activities = [ToolActivity(id: "image-\(reply.id)", toolName: "generate_image", title: L("Generating image", "Görsel üretiliyor"))]
         items.append(reply)
         beginTurn(using: settings)
@@ -499,9 +647,9 @@ final class ChatViewModel {
     }
 
     func retry(using settings: AppSettings) {
-        guard canRetry else { return }
+        guard canRetry, resolveTurnModel(for: .retry, using: settings) else { return }
         errorMessage = nil
-        if settings.selection(for: modelOverrideID)?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
+        if settings.selection(for: turnModelID)?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
             generateImage(prompt: prompt, using: settings)
         } else {
             runTurn(using: settings)
@@ -511,19 +659,19 @@ final class ChatViewModel {
     private func runTurn(using settings: AppSettings) {
         let configuration: LLMConfiguration
         do {
-            configuration = try settings.configuration(modelID: modelOverrideID)
+            configuration = try settings.configuration(modelID: turnModelID)
         } catch {
             errorMessage = userFacingMessage(for: error)
             return
         }
-        guard let context, let selected = settings.selection(for: modelOverrideID) else { return }
-        currentModel = (selected.provider.id, selected.model.name)
+        guard let context, let selected = settings.selection(for: turnModelID) else { return }
+        currentModel = (selected.provider.id, selected.model.name, selected.model.id)
         let notes = SwiftDataNoteStore(context: context)
         let usesMemory = self.usesMemory
         let skills = skillLibrary?.active(in: selectedSkillIDs).map(\.skill) ?? []
         let project = projectID.flatMap { ProjectRecord.find($0, in: context)?.context }
 
-        let reply = ChatItem(role: .assistant, text: "")
+        let reply = ChatItem(role: .assistant, text: "", notice: limitNotice)
         items.append(reply)
         beginTurn(using: settings)
         pendingStepText = ""
@@ -683,7 +831,7 @@ final class ChatViewModel {
             items[index].usage = items[index].usage.map { $0 + usage } ?? usage
             lastPromptTokens = usage.promptTokens
             if let currentModel {
-                usageTracker?.record(usage, providerID: currentModel.providerID, model: currentModel.name)
+                usageTracker?.record(usage, providerID: currentModel.providerID, model: currentModel.name, modelID: currentModel.id)
             }
         }
     }
@@ -699,7 +847,8 @@ final class ChatViewModel {
             memoryEnabled: memoryEnabled,
             skillIDs: selectedSkillIDs.map(Array.init),
             modelID: modelOverrideID,
-            connectorIDs: selectedConnectorIDs.map(Array.init)
+            connectorIDs: selectedConnectorIDs.map(Array.init),
+            branches: branches.isEmpty ? nil : branches
         )
 
         if let conversationID,

@@ -262,6 +262,25 @@ struct ChatView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            .confirmationDialog(
+                limitTitle,
+                isPresented: Binding(
+                    get: { viewModel.limitPrompt != nil },
+                    set: { if !$0 { viewModel.dismissLimitPrompt() } }
+                ),
+                titleVisibility: .visible,
+                presenting: viewModel.limitPrompt
+            ) { prompt in
+                ForEach(settings.allModels.filter { $0.model.id != prompt.model.id }) { option in
+                    Button("\(option.model.name) · \(option.provider.name)") {
+                        viewModel.chooseLimitFallback(option.model.id, using: settings)
+                    }
+                }
+                Button(L("Cancel", "Vazgeç"), role: .cancel) { viewModel.dismissLimitPrompt() }
+            } message: { _ in
+                Text(L("Choose the model to continue with until the limit resets. It's saved as this model's fallback; you can change it in the model's settings.",
+                       "Limit yenilenene kadar devam edilecek modeli seç. Bu modelin yedeği olarak kaydedilir; modelin ayarlarından değiştirebilirsin."))
+            }
             .alert(L("Rename Chat", "Sohbeti yeniden adlandır"), isPresented: Binding(
                 get: { renaming != nil },
                 set: { if !$0 { renaming = nil } }
@@ -397,7 +416,10 @@ struct ChatView: View {
                                 edit: viewModel.canEdit(item) ? {
                                     viewModel.beginEditing(item)
                                     inputFocused = true
-                                } : nil
+                                } : nil,
+                                variant: viewModel.variantPosition(of: item),
+                                showVariant: { viewModel.showVariant($0, at: item) },
+                                isStreaming: viewModel.isStreaming
                             )
                             .id(item.id)
                         case .assistant:
@@ -413,7 +435,9 @@ struct ChatView: View {
                                         settings.select(modelID)
                                     }
                                     viewModel.regenerate(using: settings)
-                                } : nil
+                                } : nil,
+                                variant: viewModel.variantPosition(of: item),
+                                showVariant: { viewModel.showVariant($0, at: item) }
                             )
                             .id(item.id)
                         }
@@ -642,6 +666,12 @@ struct ChatView: View {
         .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
     }
 
+    private var limitTitle: String {
+        guard let prompt = viewModel.limitPrompt else { return "" }
+        return L("\(prompt.model.name) reached its \(prompt.period.title) token limit",
+                 "\(prompt.model.name) \(prompt.period.title) token limitini doldurdu")
+    }
+
     // MARK: - Sohbet menüsü (sağ üst ve kenar menüsünde basılı tutunca)
 
     @ViewBuilder
@@ -720,7 +750,7 @@ struct ChatView: View {
             viewModel.startNewChat()
         }
         // Sohbetteki görsellerin tam boyutlu kopyalarını da sil.
-        AttachmentFiles.delete(record.content.items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
+        AttachmentFiles.delete(record.content.allItems.flatMap { $0.attachments ?? [] }.compactMap(\.file))
         modelContext.delete(record)
         try? modelContext.save()
     }
@@ -747,6 +777,10 @@ private struct UserMessage: View {
     let showImage: (UIImage) -> Void
     /// `nil` ise mesaj düzenlenemez (ör. bağlam sıkıştırmasıyla özetlenmiş eski mesaj).
     let edit: (() -> Void)?
+    /// Mesaj düzenlendiyse alternatiflerden kaçıncısı olduğu.
+    let variant: (current: Int, count: Int)?
+    let showVariant: (Int) -> Void
+    let isStreaming: Bool
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -779,6 +813,10 @@ private struct UserMessage: View {
                         }
                     }
             }
+            if let variant {
+                VariantPager(position: variant, show: showVariant)
+                    .disabled(isStreaming)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
@@ -795,9 +833,18 @@ private struct AssistantMessage: View {
     let showImage: (UIImage) -> Void
     /// Son cevapta: aynı (`nil`) veya seçilen modelle yeniden üret.
     let regenerate: ((UUID?) -> Void)?
+    /// Cevap yeniden üretildiyse alternatiflerden kaçıncısı olduğu.
+    let variant: (current: Int, count: Int)?
+    let showVariant: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let notice = item.notice {
+                Label(notice, systemImage: "gauge.with.dots.needle.100percent")
+                    .font(.caption)
+                    .foregroundStyle(Palette.yellow)
+            }
+
             if let reasoning = item.reasoning, !reasoning.isEmpty {
                 ThinkingView(text: reasoning, isActive: isStreaming && item.text.isEmpty && item.preparing == nil)
             }
@@ -850,8 +897,11 @@ private struct AssistantMessage: View {
                 }
             }
 
-            if !isStreaming, item.usage != nil || item.stopped == true || regenerate != nil {
+            if !isStreaming, item.usage != nil || item.stopped == true || regenerate != nil || variant != nil {
                 HStack(spacing: 12) {
+                    if let variant {
+                        VariantPager(position: variant, show: showVariant)
+                    }
                     MessageFooter(usage: item.usage, stopped: item.stopped == true)
                     Spacer()
                     if let regenerate {
@@ -975,4 +1025,38 @@ private func approvalArguments(_ arguments: String?) -> String {
         text = String(decoding: data, as: UTF8.self)
     }
     return text.count > 600 ? String(text.prefix(600)) + "…" : text
+}
+
+/// Alternatifler arasında geçiş: ‹ 2/3 ›
+private struct VariantPager: View {
+    let position: (current: Int, count: Int)
+    /// -1 önceki, +1 sonraki.
+    let show: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button {
+                show(-1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .disabled(position.current <= 1)
+            .accessibilityLabel(L("Previous version", "Önceki sürüm"))
+            Text(verbatim: "\(position.current)/\(position.count)")
+                .monospacedDigit()
+            Button {
+                show(1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .disabled(position.current >= position.count)
+            .accessibilityLabel(L("Next version", "Sonraki sürüm"))
+        }
+        .font(.caption)
+        .foregroundStyle(Palette.textMuted)
+    }
 }
