@@ -431,7 +431,7 @@ final class ChatViewModel {
         let transport = URLSessionTransport()
         let client = LLMClient(configuration: configuration, transport: transport)
         var tools: [any Tool] = [
-            WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
+            WebSearchTool(backend: settings.searchBackend, transport: transport),
             FetchPageTool(transport: transport),
             WriteFileTool(directory: DocumentFile.directory),
             CalculatorTool(evaluate: javaScriptCalculator),

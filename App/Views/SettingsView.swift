@@ -6,6 +6,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var tavilyKey = ""
+    @State private var searchProvider = SearchProvider.tavily
+    @State private var braveKey = ""
+    @State private var searxngURL = ""
     @State private var userInstructions = ""
     @State private var language = AppLanguage.stored
     /// Ekran açıldığındaki seçim; değişirse yeniden başlatma uyarısı gösterilir.
@@ -117,15 +120,29 @@ struct SettingsView: View {
                 .listRowBackground(Palette.surface)
 
                 Section {
-                    SecureField("Tavily API key", text: $tavilyKey, prompt: prompt("Tavily API key (tvly-…)"))
-                        .foregroundStyle(Palette.textBright)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    Picker(L("Search service", "Arama servisi"), selection: $searchProvider) {
+                        ForEach(SearchProvider.allCases) { provider in
+                            Text(provider.title).tag(provider)
+                        }
+                    }
+                    .foregroundStyle(Palette.textBright)
+                    switch searchProvider {
+                    case .tavily:
+                        SecureField("Tavily API key", text: $tavilyKey, prompt: prompt("Tavily API key (tvly-…)"))
+                    case .brave:
+                        SecureField("Brave Search API key", text: $braveKey, prompt: prompt("Brave Search API key"))
+                    case .searxng:
+                        TextField("SearXNG URL", text: $searxngURL, prompt: prompt("https://search.example.com"))
+                            .keyboardType(.URL)
+                    }
                 } header: {
                     header(L("Web search", "Web araması"))
                 } footer: {
-                    footer(L("Free at tavily.com. If left empty, the assistant can't search the web.", "tavily.com'dan ücretsiz alınır. Boş bırakılırsa asistan web'de arama yapamaz."))
+                    footer(searchFooter)
                 }
+                .foregroundStyle(Palette.textBright)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .listRowBackground(Palette.surface)
             }
             .scrollContentBackground(.hidden)
@@ -139,6 +156,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L("Done", "Bitti")) {
                         settings.saveGeneral(tavilyKey: tavilyKey, userInstructions: userInstructions)
+                        settings.saveSearch(provider: searchProvider, braveKey: braveKey, searxngURL: searxngURL)
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -146,8 +164,27 @@ struct SettingsView: View {
             }
             .onAppear {
                 tavilyKey = settings.tavilyKey
+                searchProvider = settings.searchProvider
+                braveKey = settings.braveKey
+                searxngURL = settings.searxngURL
                 userInstructions = settings.userInstructions
             }
+        }
+    }
+}
+
+extension SettingsView {
+    fileprivate var searchFooter: String {
+        switch searchProvider {
+        case .tavily:
+            L("Free tier at tavily.com. If the key is empty, the assistant can't search the web.",
+              "tavily.com'da ücretsiz plan var. Key boşsa asistan web'de arama yapamaz.")
+        case .brave:
+            L("Get a key at brave.com/search/api (free tier available).",
+              "Key'i brave.com/search/api adresinden alabilirsin (ücretsiz plan var).")
+        case .searxng:
+            L("Address of your own SearXNG instance (HTTPS). JSON output must be enabled in its settings (search.formats: json).",
+              "Kendi SearXNG sunucunun adresi (HTTPS). Sunucu ayarlarında JSON çıktısı açık olmalı (search.formats: json).")
         }
     }
 }

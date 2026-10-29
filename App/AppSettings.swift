@@ -39,6 +39,9 @@ final class AppSettings {
         static let providers = "llm.providers"
         static let selectedModel = "llm.selectedModel"
         static let tavilyKey = "tavily.apiKey"
+        static let braveKey = "brave.apiKey"
+        static let searchProvider = "search.provider"
+        static let searxngURL = "search.searxngURL"
         static let userInstructions = "user.instructions"
 
         static func apiKey(_ provider: UUID) -> String { "provider.\(provider.uuidString).apiKey" }
@@ -54,6 +57,9 @@ final class AppSettings {
     private(set) var providers: [Provider] = []
     private(set) var selectedModelID: UUID?
     private(set) var tavilyKey: String
+    private(set) var searchProvider: SearchProvider
+    private(set) var braveKey: String
+    private(set) var searxngURL: String
     /// Her sohbette system prompt'a eklenen kişisel talimatlar (örn. "emoji kullanma").
     private(set) var userInstructions: String
     private var apiKeys: [UUID: String] = [:]
@@ -62,6 +68,9 @@ final class AppSettings {
     init() {
         let defaults = UserDefaults.standard
         tavilyKey = Keychain.read(Keys.tavilyKey) ?? ""
+        braveKey = Keychain.read(Keys.braveKey) ?? ""
+        searchProvider = defaults.string(forKey: Keys.searchProvider).flatMap(SearchProvider.init(rawValue:)) ?? .tavily
+        searxngURL = defaults.string(forKey: Keys.searxngURL) ?? ""
         userInstructions = defaults.string(forKey: Keys.userInstructions) ?? ""
 
         if let data = defaults.data(forKey: Keys.providers),
@@ -193,6 +202,30 @@ final class AppSettings {
         UserDefaults.standard.set(trimmed, forKey: Keys.userInstructions)
     }
 
+    /// Asistanın web aramasında kullandığı servis.
+    var searchBackend: SearchBackend {
+        switch searchProvider {
+        case .tavily: .tavily(apiKey: tavilyKey)
+        case .brave: .brave(apiKey: braveKey)
+        case .searxng: .searxng(baseURL: searxngURL)
+        }
+    }
+
+    func saveSearch(provider: SearchProvider, braveKey: String, searxngURL: String) {
+        searchProvider = provider
+        UserDefaults.standard.set(provider.rawValue, forKey: Keys.searchProvider)
+
+        self.searxngURL = searxngURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(self.searxngURL, forKey: Keys.searxngURL)
+
+        self.braveKey = braveKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if self.braveKey.isEmpty {
+            Keychain.delete(Keys.braveKey)
+        } else {
+            Keychain.save(self.braveKey, for: Keys.braveKey)
+        }
+    }
+
     func saveGeneral(tavilyKey: String, userInstructions: String) {
         self.userInstructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(self.userInstructions, forKey: Keys.userInstructions)
@@ -243,6 +276,21 @@ extension ReasoningEffort {
         case .low: L("Low", "Düşük")
         case .medium: L("Medium", "Orta")
         case .high: L("High", "Yüksek")
+        }
+    }
+}
+
+/// Ayarlar'da seçilen arama servisi.
+enum SearchProvider: String, CaseIterable, Identifiable {
+    case tavily, brave, searxng
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .tavily: "Tavily"
+        case .brave: "Brave Search"
+        case .searxng: "SearXNG"
         }
     }
 }
