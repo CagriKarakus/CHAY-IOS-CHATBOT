@@ -4,6 +4,15 @@
 
 A native iOS assistant that runs on **your own LLM API key**. It researches the web, reads your files, writes documents, remembers things about you, connects to MCP servers and works with any OpenAI-compatible endpoint. All agent logic runs on the phone; there is no backend server, and your data only goes to the providers and services you configure.
 
+## Download
+
+The latest version is **[v1.1](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. Download the `.ipa` from [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and install it with Sideloadly (see [Installing on an iPhone](#installing-on-an-iphone)). The app is not on the App Store.
+
+| Version | Highlights |
+| --- | --- |
+| v1.1 | Claude-style sidebar and chat menu (pin, rename, share, move to project), reply alternatives (‹ 1/2 ›), per-model token limits with a fallback model, MCP connectors with browser sign-in, keyless DuckDuckGo search |
+| v1.0 | First stable build |
+
 ## Features
 
 ### Chat and models
@@ -84,9 +93,9 @@ The project is developed on Windows. Logic lives in `AgentCore` and is tested lo
    ```powershell
    gh run download <run-id> --name AIAssistant-ipa
    ```
-   CI builds are kept for 14 days. Stable versions are attached to [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and don't expire:
+   CI builds are kept for 14 days. Stable versions are attached to [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and don't expire. To download the latest one (or name a version such as `v1.0`):
    ```powershell
-   gh release download v1.0 --pattern "CHAY-v1.0.ipa"
+   gh release download --repo CagriKarakus/CHAY-IOS-CHATBOT --pattern "*.ipa"
    ```
 3. Install the `.ipa` with Sideloadly. Installing over the existing app keeps your settings and data. Before going back to an older version, export a backup first.
 4. On first install, enable *Settings → Privacy & Security → Developer Mode* and trust the developer profile under *Settings → General → VPN & Device Management*.

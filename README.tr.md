@@ -4,6 +4,15 @@
 
 **Kendi LLM API key'inle** çalışan, native bir iOS asistanı. Web'de araştırma yapar, dosyalarını okur, doküman yazar, seninle ilgili şeyleri hatırlar, MCP sunucularına bağlanır ve OpenAI-uyumlu her endpoint ile çalışır. Tüm agent mantığı telefonda çalışır; arada bir sunucu yoktur ve verilerin sadece senin ayarladığın sağlayıcılara ve servislere gider.
 
+## İndirme
+
+Son sürüm **[v1.1](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. `.ipa` dosyasını [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasından indirip Sideloadly ile yükle ([iPhone'a yükleme](#iphonea-yükleme) bölümüne bak). Uygulama App Store'da yok.
+
+| Sürüm | Öne çıkanlar |
+| --- | --- |
+| v1.1 | Claude tarzı kenar menüsü ve sohbet menüsü (sabitle, yeniden adlandır, paylaş, projeye taşı), cevap alternatifleri (‹ 1/2 ›), yedek modelli model başına token limitleri, tarayıcıyla girişli MCP bağlayıcıları, key gerektirmeyen DuckDuckGo araması |
+| v1.0 | İlk sağlam sürüm |
+
 ## Özellikler
 
 ### Sohbet ve modeller
@@ -84,9 +93,9 @@ Proje Windows'ta geliştirilir. Mantık `AgentCore`'dadır ve yerelde test edili
    ```powershell
    gh run download <run-id> --name AIAssistant-ipa
    ```
-   CI derlemeleri 14 gün saklanır. Sağlam sürümler [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasına eklenir ve silinmez:
+   CI derlemeleri 14 gün saklanır. Sağlam sürümler [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasına eklenir ve silinmez. Son sürümü indirmek için (veya `v1.0` gibi bir sürüm adı ver):
    ```powershell
-   gh release download v1.0 --pattern "CHAY-v1.0.ipa"
+   gh release download --repo CagriKarakus/CHAY-IOS-CHATBOT --pattern "*.ipa"
    ```
 3. `.ipa`'yı Sideloadly ile yükle. Mevcut uygulamanın üstüne yüklemek ayarlarını ve verilerini korur. Daha eski bir sürüme dönmeden önce yedek al.
 4. İlk kurulumda *Ayarlar → Gizlilik ve Güvenlik → Geliştirici Modu*'nu aç ve *Ayarlar → Genel → VPN ve Aygıt Yönetimi*'nde geliştirici profiline güven.
