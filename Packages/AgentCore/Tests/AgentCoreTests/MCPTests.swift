@@ -168,6 +168,8 @@ final class SessionCounter: @unchecked Sendable {
                          exposedName: "mcp_gh_list", serverName: "GitHub", client: client)
     let writer = MCPTool(info: MCPToolInfo(name: "create", title: "Create issue"), exposedName: "mcp_gh_create", serverName: "GitHub", client: client)
     #expect(!reader.requiresApproval && writer.requiresApproval)
+    let trusted = MCPTool(info: MCPToolInfo(name: "create"), exposedName: "mcp_gh_create", serverName: "GitHub", client: client, alwaysAllowed: true)
+    #expect(!trusted.requiresApproval)
     #expect(writer.parameters == ["type": "object", "properties": [:]])
     #expect(writer.activityDetail(for: "{}") == "GitHub · Create issue")
     #expect(writer.description == "[GitHub connector] Create issue")

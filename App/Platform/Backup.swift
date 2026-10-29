@@ -42,6 +42,8 @@ struct Backup: Codable {
     var documents: [StoredDocument]
     /// Eski yedeklerde yok.
     var projects: [StoredProject]?
+    /// Bağlayıcılar (token ve girişler hariç). Eski yedeklerde yok.
+    var connectors: [Connector]?
 }
 
 /// İçe aktarmada eklenenlerin sayısı.
@@ -53,11 +55,12 @@ struct ImportSummary {
     var providers = 0
     var documents = 0
     var projects = 0
+    var connectors = 0
 }
 
 @MainActor
 enum BackupService {
-    static func export(context: ModelContext, settings: AppSettings, skills: SkillLibrary, prompts: PromptLibrary) throws -> URL {
+    static func export(context: ModelContext, settings: AppSettings, skills: SkillLibrary, prompts: PromptLibrary, connectors: ConnectorLibrary) throws -> URL {
         let notes = try context.fetch(FetchDescriptor<NoteRecord>(sortBy: [SortDescriptor(\.createdAt)]))
         let conversations = try context.fetch(FetchDescriptor<ConversationRecord>(sortBy: [SortDescriptor(\.createdAt)]))
         let documents = DocumentFile.all().compactMap { file -> Backup.StoredDocument? in
@@ -79,7 +82,8 @@ enum BackupService {
             documents: documents,
             projects: try context.fetch(FetchDescriptor<ProjectRecord>()).map {
                 Backup.StoredProject(id: $0.id, name: $0.name, instructions: $0.instructions, createdAt: $0.createdAt, files: $0.files)
-            }
+            },
+            connectors: connectors.connectors
         )
 
         let encoder = JSONEncoder()
@@ -98,7 +102,8 @@ enum BackupService {
         context: ModelContext,
         settings: AppSettings,
         skills: SkillLibrary,
-        prompts: PromptLibrary
+        prompts: PromptLibrary,
+        connectors: ConnectorLibrary
     ) throws -> ImportSummary {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -138,6 +143,7 @@ enum BackupService {
         summary.skills = skills.importSkills(backup.skills)
         summary.prompts = prompts.importPrompts(backup.prompts)
         summary.providers = settings.importProviders(backup.providers)
+        summary.connectors = connectors.importConnectors(backup.connectors ?? [])
         settings.importUserInstructions(backup.userInstructions)
 
         try FileManager.default.createDirectory(at: DocumentFile.directory, withIntermediateDirectories: true)

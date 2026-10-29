@@ -38,6 +38,12 @@ struct Connector: Codable, Identifiable, Equatable {
     var disabledTools: [String] = []
     /// Son bağlantıda sunucunun bildirdiği araçlar.
     var tools: [MCPToolInfo] = []
+    /// Veri değiştirebilse de sormadan çalışmasına izin verilen araçlar. Eski kayıtlarda yok.
+    var alwaysAllowedTools: [String]?
+
+    func isAlwaysAllowed(_ tool: MCPToolInfo) -> Bool {
+        alwaysAllowedTools?.contains(tool.name) ?? false
+    }
 
     var enabledTools: [MCPToolInfo] {
         tools.filter { !disabledTools.contains($0.name) }
@@ -130,6 +136,24 @@ final class ConnectorLibrary {
         persist()
     }
 
+    /// Veri değiştirebilen bir aracın her çalışmadan önce sorup sormayacağı.
+    func setAskBeforeRunning(_ ask: Bool, tool name: String, in id: UUID) {
+        guard let index = connectors.firstIndex(where: { $0.id == id }) else { return }
+        var allowed = connectors[index].alwaysAllowedTools ?? []
+        allowed.removeAll { $0 == name }
+        if !ask { allowed.append(name) }
+        connectors[index].alwaysAllowedTools = allowed
+        persist()
+    }
+
+    /// Yedekten gelenleri ekler; aynı kimlikte veya adreste bağlayıcı varsa atlar. Token ve girişler yedekte yoktur.
+    func importConnectors(_ incoming: [Connector]) -> Int {
+        let new = incoming.filter { item in !connectors.contains { $0.id == item.id || $0.url == item.url } }
+        connectors += new
+        persist()
+        return new.count
+    }
+
     func setEnabledByDefault(_ enabled: Bool, for id: UUID) {
         guard let index = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[index].enabledByDefault = enabled
@@ -197,7 +221,8 @@ final class ConnectorLibrary {
             for info in current.enabledTools {
                 let name = MCPTool.exposedName(server: current.name, tool: info.name, taken: taken)
                 taken.insert(name)
-                tools.append(MCPTool(info: info, exposedName: name, serverName: current.name, client: client))
+                tools.append(MCPTool(info: info, exposedName: name, serverName: current.name, client: client,
+                                     alwaysAllowed: current.isAlwaysAllowed(info)))
             }
         }
         return tools

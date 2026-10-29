@@ -166,26 +166,40 @@ struct ConnectorEditorView: View {
             if let saved, !saved.tools.isEmpty {
                 Section {
                     ForEach(saved.tools, id: \.name) { tool in
-                        Toggle(isOn: Binding(
-                            get: { !(library.connector(draft.id)?.disabledTools.contains(tool.name) ?? false) },
-                            set: { library.setTool(tool.name, enabled: $0, in: draft.id) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text(tool.title ?? tool.name)
-                                        .foregroundStyle(Palette.textBright)
-                                    if !tool.readOnly {
-                                        Image(systemName: "pencil.circle")
-                                            .foregroundStyle(Palette.yellow)
-                                            .accessibilityLabel(L("Asks before running", "Çalışmadan önce sorar"))
+                        let enabled = !saved.disabledTools.contains(tool.name)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Toggle(isOn: Binding(
+                                get: { enabled },
+                                set: { library.setTool(tool.name, enabled: $0, in: draft.id) }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 4) {
+                                        Text(tool.title ?? tool.name)
+                                            .foregroundStyle(Palette.textBright)
+                                        if !tool.readOnly {
+                                            Image(systemName: "pencil.circle")
+                                                .foregroundStyle(Palette.yellow)
+                                                .accessibilityLabel(L("Asks before running", "Çalışmadan önce sorar"))
+                                        }
+                                    }
+                                    if let description = tool.description {
+                                        Text(description)
+                                            .font(.caption)
+                                            .lineLimit(2)
+                                            .foregroundStyle(Palette.textMuted)
                                     }
                                 }
-                                if let description = tool.description {
-                                    Text(description)
+                            }
+                            if enabled && !tool.readOnly {
+                                Toggle(isOn: Binding(
+                                    get: { !saved.isAlwaysAllowed(tool) },
+                                    set: { library.setAskBeforeRunning($0, tool: tool.name, in: draft.id) }
+                                )) {
+                                    Text(L("Ask before running", "Çalıştırmadan önce sor"))
                                         .font(.caption)
-                                        .lineLimit(2)
-                                        .foregroundStyle(Palette.textMuted)
+                                        .foregroundStyle(Palette.text)
                                 }
+                                .padding(.leading, 16)
                             }
                         }
                     }
@@ -193,8 +207,8 @@ struct ConnectorEditorView: View {
                     header(L("Tools (\(saved.enabledTools.count) of \(saved.tools.count) on)",
                              "Araçlar (\(saved.tools.count) araçtan \(saved.enabledTools.count) açık)"))
                 } footer: {
-                    footer(L("Tools marked with a pencil can change data and ask you before each run. Turning off tools you don't need keeps the model's context small.",
-                             "Kalem işaretli araçlar veri değiştirebilir ve her çalışmadan önce sana sorar. Kullanmadığın araçları kapatmak modelin bağlamını küçük tutar."))
+                    footer(L("Tools marked with a pencil may change data and ask you before each run, unless you turn off \"Ask before running\" for tools you trust. Many servers don't mark their read-only tools, so search tools can show the pencil too. Turning off tools you don't need keeps the model's context small.",
+                             "Kalem işaretli araçlar veri değiştirebilir ve güvendiğin araçlarda \"Çalıştırmadan önce sor\"u kapatmadıkça her çalışmadan önce sana sorar. Birçok sunucu sadece okuyan araçlarını işaretlemediği için arama araçlarında da kalem görülebilir. Kullanmadığın araçları kapatmak modelin bağlamını küçük tutar."))
                 }
                 .listRowBackground(Palette.surface)
             }
@@ -245,6 +259,7 @@ struct ConnectorEditorView: View {
         if let saved {
             draft.tools = saved.tools
             draft.disabledTools = saved.disabledTools
+            draft.alwaysAllowedTools = saved.alwaysAllowedTools
             draft.enabledByDefault = saved.enabledByDefault
         }
         library.save(draft, token: token)

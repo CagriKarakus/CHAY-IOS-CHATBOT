@@ -8,14 +8,15 @@ public struct MCPTool: Tool {
     public let name: String
     public let description: String
     public let parameters: JSONValue
-    /// Sadece okuyan araçlar doğrudan çalışır; diğerleri her seferinde kullanıcıya sorulur.
+    /// Sadece okuyan araçlar doğrudan çalışır; diğerleri, kullanıcı "sormadan çalıştır" demediyse her seferinde sorulur.
     public let requiresApproval: Bool
 
     private let info: MCPToolInfo
     private let serverName: String
     private let client: MCPClient
 
-    public init(info: MCPToolInfo, exposedName: String, serverName: String, client: MCPClient) {
+    /// `alwaysAllowed`: kullanıcı bu aracın sormadan çalışmasına izin verdi.
+    public init(info: MCPToolInfo, exposedName: String, serverName: String, client: MCPClient, alwaysAllowed: Bool = false) {
         self.info = info
         self.serverName = serverName
         self.client = client
@@ -26,7 +27,7 @@ public struct MCPTool: Tool {
         } else {
             parameters = ["type": "object", "properties": [:]]
         }
-        requiresApproval = !info.readOnly
+        requiresApproval = !info.readOnly && !alwaysAllowed
     }
 
     public func activityDetail(for arguments: String) -> String? {

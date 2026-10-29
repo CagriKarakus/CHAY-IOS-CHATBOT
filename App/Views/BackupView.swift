@@ -7,6 +7,7 @@ struct BackupView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(SkillLibrary.self) private var skills
     @Environment(PromptLibrary.self) private var prompts
+    @Environment(ConnectorLibrary.self) private var connectors
     @State private var sharedFile: SharedFile?
     @State private var importing = false
     @State private var message: String?
@@ -17,7 +18,7 @@ struct BackupView: View {
             Section {
                 Button {
                     do {
-                        sharedFile = SharedFile(url: try BackupService.export(context: context, settings: settings, skills: skills, prompts: prompts))
+                        sharedFile = SharedFile(url: try BackupService.export(context: context, settings: settings, skills: skills, prompts: prompts, connectors: connectors))
                     } catch {
                         show(userFacingMessage(for: error), failed: true)
                     }
@@ -31,8 +32,8 @@ struct BackupView: View {
                 }
             } footer: {
                 footer(L(
-                    "The backup is one file with your chats, memory notes, skills, prompts, documents, providers and personal instructions. Save it to iCloud Drive in the Files app to keep it off the phone. API keys are not included; enter them again after restoring. Importing adds what's missing and never deletes anything.",
-                    "Yedek; sohbetlerin, hafıza notların, skill'ler, hazır komutlar, dokümanlar, sağlayıcılar ve kişisel talimatlarla tek bir dosyadır. Telefondan ayrı tutmak için Dosyalar'da iCloud Drive'a kaydet. API key'ler dahil edilmez; geri yükledikten sonra yeniden gir. İçe aktarma sadece eksikleri ekler, hiçbir şeyi silmez."
+                    "The backup is one file with your chats, memory notes, skills, prompts, documents, providers, connectors and personal instructions. Save it to iCloud Drive in the Files app to keep it off the phone. API keys, connector tokens and sign-ins are not included; enter them or sign in again after restoring. Importing adds what's missing and never deletes anything.",
+                    "Yedek; sohbetlerin, hafıza notların, skill'ler, hazır komutlar, dokümanlar, sağlayıcılar, bağlayıcılar ve kişisel talimatlarla tek bir dosyadır. Telefondan ayrı tutmak için Dosyalar'da iCloud Drive'a kaydet. API key'ler, bağlayıcı token'ları ve girişler dahil edilmez; geri yükledikten sonra yeniden gir veya giriş yap. İçe aktarma sadece eksikleri ekler, hiçbir şeyi silmez."
                 ))
             }
             .listRowBackground(Palette.surface)
@@ -57,10 +58,10 @@ struct BackupView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             guard case let .success(url) = result else { return }
             do {
-                let summary = try BackupService.importBackup(from: url, context: context, settings: settings, skills: skills, prompts: prompts)
+                let summary = try BackupService.importBackup(from: url, context: context, settings: settings, skills: skills, prompts: prompts, connectors: connectors)
                 show(L(
-                    "Imported: \(summary.projects) projects, \(summary.conversations) chats, \(summary.notes) notes, \(summary.skills) skills, \(summary.prompts) prompts, \(summary.documents) documents, \(summary.providers) providers.",
-                    "İçe aktarıldı: \(summary.projects) proje, \(summary.conversations) sohbet, \(summary.notes) not, \(summary.skills) skill, \(summary.prompts) komut, \(summary.documents) doküman, \(summary.providers) sağlayıcı."
+                    "Imported: \(summary.projects) projects, \(summary.conversations) chats, \(summary.notes) notes, \(summary.skills) skills, \(summary.prompts) prompts, \(summary.documents) documents, \(summary.providers) providers, \(summary.connectors) connectors.",
+                    "İçe aktarıldı: \(summary.projects) proje, \(summary.conversations) sohbet, \(summary.notes) not, \(summary.skills) skill, \(summary.prompts) komut, \(summary.documents) doküman, \(summary.providers) sağlayıcı, \(summary.connectors) bağlayıcı."
                 ), failed: false)
             } catch {
                 show(L("This file isn't a valid backup.", "Bu dosya geçerli bir yedek değil."), failed: true)
