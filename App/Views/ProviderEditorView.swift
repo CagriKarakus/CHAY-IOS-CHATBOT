@@ -139,7 +139,7 @@ struct ProviderEditorView: View {
                     fetchedModels = FetchedModels(names: names)
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = userFacingMessage(for: error)
             }
         }
     }
