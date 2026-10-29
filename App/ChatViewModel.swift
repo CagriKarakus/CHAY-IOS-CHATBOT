@@ -27,22 +27,51 @@ struct ToolActivity: Identifiable {
     var state: State = .running
 }
 
+/// Kullanıcıdan onay bekleyen bir araç çağrısı (örn. web okunduktan sonra hafızaya not).
+struct PendingApproval: Identifiable {
+    let id = UUID()
+    let request: ApprovalRequest
+}
+
 /// Bellekteki sohbet: ekran mesajları + modele giden geçmiş.
 @Observable @MainActor
 final class ChatViewModel {
     private(set) var items: [ChatItem] = []
     private(set) var isStreaming = false
+    private(set) var pendingApproval: PendingApproval?
     var input = ""
     var errorMessage: String?
 
     /// Modele giden mesajlar (sistem mesajı hariç): kullanıcı, asistan, araç çağrıları ve sonuçları.
     private var history: [ChatMessage] = []
+    private var approvalContinuation: CheckedContinuation<Bool, Never>?
 
     var canSend: Bool {
         !isStreaming && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    func send(using settings: AppSettings) {
+    /// Ekranı ve geçmişi temizler; hafıza notları kalır.
+    func startNewChat() {
+        guard !isStreaming else { return }
+        items = []
+        history = []
+        errorMessage = nil
+    }
+
+    func resolveApproval(_ approved: Bool) {
+        approvalContinuation?.resume(returning: approved)
+        approvalContinuation = nil
+        pendingApproval = nil
+    }
+
+    private func requestApproval(_ request: ApprovalRequest) async -> Bool {
+        await withCheckedContinuation { continuation in
+            approvalContinuation = continuation
+            pendingApproval = PendingApproval(request: request)
+        }
+    }
+
+    func send(using settings: AppSettings, notes: SwiftDataNoteStore) {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
 
@@ -69,13 +98,20 @@ final class ChatViewModel {
                 WebSearchTool(apiKey: settings.tavilyKey, transport: transport),
                 FetchPageTool(transport: transport),
                 WriteFileTool(directory: DocumentFile.directory),
-            ]
+                SaveNoteTool(store: notes),
+                ReadNotesTool(store: notes),
+            ],
+            approve: { [weak self] request in
+                await self?.requestApproval(request) ?? false
+            }
         )
-        let systemPrompt = SystemPrompt.make(userInstructions: settings.userInstructions)
-        let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
+        let userInstructions = settings.userInstructions
+        let conversation = history
 
         Task {
             do {
+                let systemPrompt = SystemPrompt.make(notes: try await notes.allNotes(), userInstructions: userInstructions)
+                let messages = [ChatMessage(role: .system, content: systemPrompt)] + conversation
                 for try await event in agent.run(messages) {
                     apply(event, to: reply.id)
                 }

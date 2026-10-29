@@ -10,17 +10,28 @@ public enum AgentEvent: Equatable, Sendable {
     case message(ChatMessage)
 }
 
+/// Kullanıcıdan onay istenen araç çağrısı.
+public struct ApprovalRequest: Equatable, Sendable {
+    public let toolName: String
+    public let activity: String
+}
+
 /// Model araç istedikçe araçları çalıştırıp sonucu geri veren döngü.
 public struct AgentLoop: Sendable {
+    public typealias Approver = @Sendable (ApprovalRequest) async -> Bool
+
     private let client: LLMClient
     private let tools: [String: any Tool]
     private let maxSteps: Int
+    private let approve: Approver
 
     /// `maxSteps`: bir istekte modele en fazla kaç kez gidileceği. Son adımda araç verilmez, model cevap vermek zorunda kalır.
-    public init(client: LLMClient, tools: [any Tool], maxSteps: Int = 8) {
+    /// `approve`: onay gerektiren araç çağrılarında kullanıcıya sorar; verilmezse bu çağrılar reddedilir.
+    public init(client: LLMClient, tools: [any Tool], maxSteps: Int = 8, approve: @escaping Approver = { _ in false }) {
         self.client = client
         self.tools = Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
         self.maxSteps = max(1, maxSteps)
+        self.approve = approve
     }
 
     public func run(_ messages: [ChatMessage]) -> AsyncThrowingStream<AgentEvent, any Error> {
@@ -70,7 +81,7 @@ public struct AgentLoop: Sendable {
 
             for call in calls {
                 try Task.checkCancellation()
-                let result = try await execute(call, emit: emit)
+                let result = try await execute(call, conversation: conversation, emit: emit)
                 conversation.append(result)
                 emit(.message(result))
             }
@@ -78,14 +89,26 @@ public struct AgentLoop: Sendable {
     }
 
     /// Aracı çalıştırır; hataları modele metin olarak döner ki model toparlayabilsin.
-    private func execute(_ call: ToolCall, emit: (AgentEvent) -> Void) async throws -> ChatMessage {
+    private func execute(_ call: ToolCall, conversation: [ChatMessage], emit: (AgentEvent) -> Void) async throws -> ChatMessage {
         guard let tool = tools[call.function.name] else {
             emit(.toolStarted(id: call.id, name: call.function.name, activity: call.function.name))
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
             return ChatMessage(role: .tool, content: "Hata: '\(call.function.name)' adında bir araç yok.", toolCallID: call.id)
         }
 
-        emit(.toolStarted(id: call.id, name: tool.name, activity: tool.activity(for: call.function.arguments) ?? tool.name))
+        let activity = tool.activity(for: call.function.arguments) ?? tool.name
+        emit(.toolStarted(id: call.id, name: tool.name, activity: activity))
+
+        // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler kullanıcı onayı olmadan yapılmaz.
+        if tool.requiresApprovalAfterUntrustedContent, containsUntrustedContent(conversation) {
+            let approved = await approve(ApprovalRequest(toolName: tool.name, activity: activity))
+            try Task.checkCancellation()
+            guard approved else {
+                emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
+                return ChatMessage(role: .tool, content: "Kullanıcı bu işlemi onaylamadı; tekrar deneme.", toolCallID: call.id)
+            }
+        }
+
         do {
             let output = try await tool.run(arguments: call.function.arguments)
             emit(.toolFinished(id: call.id, sources: output.sources, files: output.files, failed: false))
@@ -96,5 +119,10 @@ public struct AgentLoop: Sendable {
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
             return ChatMessage(role: .tool, content: "Hata: \(error.localizedDescription)", toolCallID: call.id)
         }
+    }
+
+    /// Geçmişte (önceki istekler dahil) web'den gelen bir araç sonucu var mı.
+    private func containsUntrustedContent(_ conversation: [ChatMessage]) -> Bool {
+        conversation.contains { $0.role == .tool && ($0.content?.contains(untrustedContentMarker) ?? false) }
     }
 }

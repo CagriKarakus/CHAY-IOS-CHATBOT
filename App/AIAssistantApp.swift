@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 @main
@@ -11,5 +12,6 @@ struct AIAssistantApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Palette.blue)
         }
+        .modelContainer(for: NoteRecord.self)
     }
 }

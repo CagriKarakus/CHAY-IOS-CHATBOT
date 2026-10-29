@@ -1,16 +1,23 @@
 import AgentCore
 import MarkdownUI
+import SwiftData
 import SwiftUI
 
 struct ChatView: View {
+    private enum Route: Hashable {
+        case documents, notes
+    }
+
     @Environment(AppSettings.self) private var settings
+    @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChatViewModel()
+    @State private var path: [Route] = []
     @State private var showingSettings = false
     @State private var openedDocument: DocumentFile?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 messageList
                 if let errorMessage = viewModel.errorMessage {
@@ -30,23 +37,46 @@ struct ChatView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink {
-                        DocumentsView()
+                    Menu {
+                        Button("Dokümanlar", systemImage: "folder") { path.append(.documents) }
+                        Button("Hafıza", systemImage: "brain") { path.append(.notes) }
+                        Button("Ayarlar", systemImage: "slider.horizontal.3") { showingSettings = true }
                     } label: {
-                        Image(systemName: "folder")
+                        Image(systemName: "line.3.horizontal")
                             .foregroundStyle(Palette.text)
                     }
-                    .accessibilityLabel("Dokümanlar")
+                    .accessibilityLabel("Menü")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showingSettings = true
+                        inputFocused = false
+                        viewModel.startNewChat()
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .foregroundStyle(Palette.text)
+                        Image(systemName: "square.and.pencil")
+                            .foregroundStyle(viewModel.isStreaming ? Palette.textMuted : Palette.text)
                     }
-                    .accessibilityLabel("Ayarlar")
+                    .disabled(viewModel.isStreaming)
+                    .accessibilityLabel("Yeni sohbet")
                 }
+            }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .documents: DocumentsView()
+                case .notes: NotesView()
+                }
+            }
+            .alert(
+                "Hafızaya kaydedilsin mi?",
+                isPresented: Binding(
+                    get: { viewModel.pendingApproval != nil },
+                    set: { if !$0 { viewModel.resolveApproval(false) } }
+                ),
+                presenting: viewModel.pendingApproval
+            ) { _ in
+                Button("Reddet", role: .cancel) { viewModel.resolveApproval(false) }
+                Button("Kaydet") { viewModel.resolveApproval(true) }
+            } message: { pending in
+                Text("Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.activity)")
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
@@ -144,7 +174,7 @@ struct ChatView: View {
                 Spacer()
                 Button {
                     inputFocused = false
-                    viewModel.send(using: settings)
+                    viewModel.send(using: settings, notes: SwiftDataNoteStore(context: modelContext))
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.body.weight(.semibold))
@@ -255,6 +285,8 @@ private struct ActivityRow: View {
         case "web_search": "magnifyingglass"
         case "fetch_page": "doc.text"
         case "write_file": "doc.badge.plus"
+        case "save_note": "brain"
+        case "read_notes": "list.bullet.rectangle"
         default: "wrench.and.screwdriver"
         }
     }
