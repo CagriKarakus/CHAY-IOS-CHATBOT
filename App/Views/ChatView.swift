@@ -241,8 +241,7 @@ struct ChatView: View {
         if !unreadable.isEmpty {
             let note = L("Couldn't read the file: \(unreadable.joined(separator: ", "))",
                          "Dosya okunamadı: \(unreadable.joined(separator: ", "))")
-            viewModel.errorMessage = [viewModel.errorMessage, note].compactMap { $0 }.joined(separator: "
-")
+            viewModel.errorMessage = [viewModel.errorMessage, note].compactMap { $0 }.joined(separator: "\n")
         }
     }
 
