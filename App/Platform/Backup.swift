@@ -47,6 +47,8 @@ struct Backup: Codable {
     var projects: [StoredProject]?
     /// Bağlayıcılar (token ve girişler hariç). Eski yedeklerde yok.
     var connectors: [Connector]?
+    /// Zamanlanmış görevler. Eski yedeklerde yok.
+    var scheduledTasks: [ScheduledTask]?
 }
 
 /// İçe aktarmada eklenenlerin sayısı.
@@ -59,11 +61,12 @@ struct ImportSummary {
     var documents = 0
     var projects = 0
     var connectors = 0
+    var scheduledTasks = 0
 }
 
 @MainActor
 enum BackupService {
-    static func export(context: ModelContext, settings: AppSettings, skills: SkillLibrary, prompts: PromptLibrary, connectors: ConnectorLibrary) throws -> URL {
+    static func export(context: ModelContext, settings: AppSettings, skills: SkillLibrary, prompts: PromptLibrary, connectors: ConnectorLibrary, scheduledTasks: ScheduledTaskLibrary) throws -> URL {
         let notes = try context.fetch(FetchDescriptor<NoteRecord>(sortBy: [SortDescriptor(\.createdAt)]))
         let conversations = try context.fetch(FetchDescriptor<ConversationRecord>(sortBy: [SortDescriptor(\.createdAt)]))
         let documents = DocumentFile.all().compactMap { file -> Backup.StoredDocument? in
@@ -87,7 +90,8 @@ enum BackupService {
             projects: try context.fetch(FetchDescriptor<ProjectRecord>()).map {
                 Backup.StoredProject(id: $0.id, name: $0.name, instructions: $0.instructions, createdAt: $0.createdAt, files: $0.files)
             },
-            connectors: connectors.connectors
+            connectors: connectors.connectors,
+            scheduledTasks: scheduledTasks.tasks
         )
 
         let encoder = JSONEncoder()
@@ -107,7 +111,8 @@ enum BackupService {
         settings: AppSettings,
         skills: SkillLibrary,
         prompts: PromptLibrary,
-        connectors: ConnectorLibrary
+        connectors: ConnectorLibrary,
+        scheduledTasks: ScheduledTaskLibrary
     ) throws -> ImportSummary {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -151,6 +156,7 @@ enum BackupService {
         summary.prompts = prompts.importPrompts(backup.prompts)
         summary.providers = settings.importProviders(backup.providers)
         summary.connectors = connectors.importConnectors(backup.connectors ?? [])
+        summary.scheduledTasks = scheduledTasks.importTasks(backup.scheduledTasks ?? [])
         settings.importUserInstructions(backup.userInstructions)
 
         try FileManager.default.createDirectory(at: DocumentFile.directory, withIntermediateDirectories: true)

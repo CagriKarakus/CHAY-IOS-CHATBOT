@@ -78,6 +78,14 @@ final class ScheduledTaskLibrary {
         persist()
     }
 
+    /// Yedekten gelenleri ekler; aynı kimlikte görev varsa atlar. Eklenen sayıyı döndürür.
+    func importTasks(_ incoming: [ScheduledTask]) -> Int {
+        let new = incoming.filter { item in !tasks.contains { $0.id == item.id } }
+        tasks += new
+        persist()
+        return new.count
+    }
+
     func setEnabled(_ enabled: Bool, for id: UUID) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
         tasks[index].enabled = enabled
