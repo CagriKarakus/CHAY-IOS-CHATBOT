@@ -51,7 +51,7 @@ struct ChatView: View {
                 composer
             }
             .background(Palette.background)
-            .navigationTitle(viewModel.isIncognito ? L("Incognito Chat", "Gizli sohbet") : L("AI Assistant", "AI Asistan"))
+            .navigationTitle(viewModel.isIncognito ? L("Incognito Chat", "Gizli sohbet") : "CHAY")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -436,8 +436,8 @@ struct ChatView: View {
             do {
                 let granted = try await recorder.start()
                 if !granted {
-                    viewModel.errorMessage = L("Microphone access is off. Turn it on in Settings > AI Assistant.",
-                                               "Mikrofon izni kapalı. Ayarlar > AI Assistant'tan açabilirsin.")
+                    viewModel.errorMessage = L("Microphone access is off. Turn it on in Settings > CHAY.",
+                                               "Mikrofon izni kapalı. Ayarlar > CHAY'den açabilirsin.")
                 }
             } catch {
                 viewModel.errorMessage = userFacingMessage(for: error)

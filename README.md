@@ -1,4 +1,4 @@
-# AI Assistant for iOS
+# CHAY — AI assistant for iOS
 
 **English** · [Türkçe](README.tr.md)
 

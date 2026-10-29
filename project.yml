@@ -24,7 +24,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: AI Assistant
+        CFBundleDisplayName: CHAY
         CFBundleDevelopmentRegion: en
         # Uygulama metinleri Localization.swift'teki L(...) ile; bu liste iOS'un kendi metinleri için.
         CFBundleLocalizations: [en, tr]
