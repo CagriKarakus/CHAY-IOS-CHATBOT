@@ -5,6 +5,8 @@ public enum LLMStreamEvent: Equatable, Sendable {
     case text(String)
     /// Modelin istediği araç çağrıları; akışın sonunda, birleştirilmiş olarak bir kez gelir.
     case toolCalls([ToolCall])
+    /// Sunucu bildirdiyse çağrının token kullanımı; en sonda bir kez gelir.
+    case usage(TokenUsage)
 }
 
 /// OpenAI-uyumlu `/chat/completions` istemcisi (SSE streaming).
@@ -78,6 +80,11 @@ public struct LLMClient: Sendable {
     private func run(_ messages: [ChatMessage], tools: [ToolDefinition], onEvent: (LLMStreamEvent) -> Void) async throws {
         let decoder = JSONDecoder()
         var toolCalls = ToolCallAccumulator()
+        var usage: ChatCompletionChunk.Usage?
+        // Token/saniye için: düşünme (reasoning) parçaları da üretim süresine dahildir.
+        let clock = ContinuousClock()
+        var firstChunk: ContinuousClock.Instant?
+        var lastChunk: ContinuousClock.Instant?
         do {
             lines: for try await line in transport.lines(for: try makeRequest(messages, tools: tools)) {
                 switch SSELine(line) {
@@ -88,7 +95,13 @@ public struct LLMClient: Sendable {
                 case let .data(json):
                     let data = Data(json.utf8)
                     if let chunk = try? decoder.decode(ChatCompletionChunk.self, from: data) {
+                        if let chunkUsage = chunk.usage {
+                            usage = chunkUsage
+                        }
                         guard let delta = chunk.choices.first?.delta else { continue }
+                        let now = clock.now
+                        firstChunk = firstChunk ?? now
+                        lastChunk = now
                         if let text = delta.content, !text.isEmpty {
                             onEvent(.text(text))
                         }
@@ -105,6 +118,14 @@ public struct LLMClient: Sendable {
         }
         if !toolCalls.isEmpty {
             onEvent(.toolCalls(toolCalls.calls))
+        }
+        if let usage {
+            let seconds = firstChunk.flatMap { first in lastChunk.map { ($0 - first).seconds } }
+            onEvent(.usage(TokenUsage(
+                promptTokens: usage.prompt_tokens ?? 0,
+                completionTokens: usage.completion_tokens ?? 0,
+                generationSeconds: seconds
+            )))
         }
     }
 

@@ -7,7 +7,7 @@ import Testing
 
     let events = try await collect(client.streamChat([ChatMessage(role: .user, content: "Selam")]))
 
-    #expect(events == [.text("Merhaba"), .text(" dünya")])
+    #expect(withoutUsage(events) == [.text("Merhaba"), .text(" dünya")])
 }
 
 @Test func stopsAtDone() async throws {
@@ -36,7 +36,7 @@ import Testing
 
     let events = try await collect(client.streamChat([]))
 
-    #expect(events == [.toolCalls([ToolCall(id: "chatcmpl-tool-8714506b287573ca", name: "get_weather", arguments: #"{"city": "İstanbul"}"#)])])
+    #expect(withoutUsage(events) == [.toolCalls([ToolCall(id: "chatcmpl-tool-8714506b287573ca", name: "get_weather", arguments: #"{"city": "İstanbul"}"#)])])
 }
 
 @Test func mergesToolCallsByIndex() async throws {

@@ -6,6 +6,10 @@ import SwiftData
 struct ConversationContent: Codable {
     var items: [ChatItem]
     var history: [ChatMessage]
+    /// Sıkıştırılmış eski mesajların özeti.
+    var summary: String?
+    /// Son model çağrısının giriş tokenı; sıkıştırma eşiği için.
+    var lastPromptTokens: Int?
 }
 
 /// Sohbetin SwiftData kaydı. İçerik tek bir JSON alanında tutulur; şema değişmeden mesaj yapısı gelişebilir.

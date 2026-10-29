@@ -2,11 +2,13 @@ import Foundation
 
 public enum SystemPrompt {
     /// Her sohbetin başına eklenen talimat. Model bugünün tarihini bilmediği için tarih eklenir.
-    /// `notes`: hafızadaki notlar. `userInstructions`: kullanıcının Ayarlar'da yazdığı kişisel talimatlar (örn. "emoji kullanma").
+    /// `notes`: hafızadaki notlar. `summary`: sıkıştırılmış eski mesajların özeti.
+    /// `userInstructions`: kullanıcının Ayarlar'da yazdığı kişisel talimatlar (örn. "emoji kullanma").
     public static func make(
         now: Date = Date(),
         timeZone: TimeZone = .current,
         notes: [Note] = [],
+        summary: String? = nil,
         userInstructions: String = ""
     ) -> String {
         let formatter = DateFormatter()
@@ -30,6 +32,10 @@ public enum SystemPrompt {
         if !notes.isEmpty {
             prompt += "\n\nKullanıcı hakkında hafızandaki notlar (cevaplarında bunları dikkate al):\n"
             prompt += notes.map { "- \($0.content)" }.joined(separator: "\n")
+        }
+
+        if let summary, !summary.isEmpty {
+            prompt += "\n\nBu sohbetin önceki kısmının özeti (eski mesajlar bağlamı aşmamak için özetlendi):\n\(summary)"
         }
 
         let instructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)

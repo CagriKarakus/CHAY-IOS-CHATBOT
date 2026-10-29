@@ -6,10 +6,17 @@ struct ChatCompletionRequest: Encodable {
     let stream: Bool
     let tools: [ToolDefinition]?
     let reasoningEffort: ReasoningEffort?
+    /// Streaming'de son parçada token kullanımını ister.
+    let streamOptions = StreamOptions()
+
+    struct StreamOptions: Encodable {
+        let include_usage = true
+    }
 
     enum CodingKeys: String, CodingKey {
         case model, messages, stream, tools
         case reasoningEffort = "reasoning_effort"
+        case streamOptions = "stream_options"
     }
 }
 
@@ -54,7 +61,12 @@ struct ChatCompletionChunk: Decodable {
         }
         let delta: Delta?
     }
+    struct Usage: Decodable {
+        let prompt_tokens: Int?
+        let completion_tokens: Int?
+    }
     let choices: [Choice]
+    let usage: Usage?
 }
 
 /// Streaming'de parça parça gelen araç çağrısı; `index` ile birleştirilir.

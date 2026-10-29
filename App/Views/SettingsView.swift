@@ -39,6 +39,16 @@ struct SettingsView: View {
                 .listRowBackground(Palette.surface)
 
                 Section {
+                    NavigationLink {
+                        UsageView()
+                    } label: {
+                        Label("Token ve arama kullanımı", systemImage: "chart.bar")
+                            .foregroundStyle(Palette.textBright)
+                    }
+                }
+                .listRowBackground(Palette.surface)
+
+                Section {
                     TextField("Kişisel talimatlar", text: $userInstructions, prompt: prompt("Örn. Emoji kullanma. Kısa cevap ver."), axis: .vertical)
                         .lineLimit(3...10)
                         .foregroundStyle(Palette.textBright)

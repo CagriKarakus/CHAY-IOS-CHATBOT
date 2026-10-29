@@ -8,6 +8,8 @@ public enum AgentEvent: Equatable, Sendable {
     case toolFinished(id: String, sources: [Source], files: [URL], failed: Bool)
     /// Geçmişe eklenmesi gereken tam bir mesaj (araç çağrısı, araç sonucu veya final cevap).
     case message(ChatMessage)
+    /// Bir model çağrısının token kullanımı (adım başına bir kez).
+    case usage(TokenUsage)
 }
 
 /// Kullanıcıdan onay istenen araç çağrısı.
@@ -64,6 +66,8 @@ public struct AgentLoop: Sendable {
                     emit(.text(delta))
                 case let .toolCalls(requested):
                     calls = requested
+                case let .usage(usage):
+                    emit(.usage(usage))
                 }
             }
 

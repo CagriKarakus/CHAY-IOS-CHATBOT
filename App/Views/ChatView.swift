@@ -9,6 +9,7 @@ struct ChatView: View {
     }
 
     @Environment(AppSettings.self) private var settings
+    @Environment(UsageTracker.self) private var usage
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChatViewModel()
     @State private var path: [Route] = []
@@ -113,7 +114,7 @@ struct ChatView: View {
                 }
             }
             .onAppear {
-                viewModel.attach(modelContext)
+                viewModel.attach(modelContext, usage: usage)
                 if !settings.isConfigured {
                     showingSettings = true
                 }
@@ -197,18 +198,31 @@ struct ChatView: View {
                 ModelMenu()
                 EffortMenu()
                 Spacer()
-                Button {
-                    inputFocused = false
-                    viewModel.send(using: settings)
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Palette.background)
-                        .frame(width: 32, height: 32)
-                        .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
+                if viewModel.isStreaming {
+                    Button {
+                        viewModel.stop()
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.background)
+                            .frame(width: 32, height: 32)
+                            .background(Palette.textBright, in: .circle)
+                    }
+                    .accessibilityLabel("Durdur")
+                } else {
+                    Button {
+                        inputFocused = false
+                        viewModel.send(using: settings)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Palette.background)
+                            .frame(width: 32, height: 32)
+                            .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
+                    }
+                    .disabled(!viewModel.canSend)
+                    .accessibilityLabel("Gönder")
                 }
-                .disabled(!viewModel.canSend)
-                .accessibilityLabel("Gönder")
             }
         }
         .padding(.horizontal, 16)
@@ -252,11 +266,7 @@ private struct AssistantMessage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !item.activities.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(item.activities) { activity in
-                        ActivityRow(activity: activity)
-                    }
-                }
+                ToolLog(activities: item.activities, isStreaming: isStreaming)
             }
 
             if !item.text.isEmpty {
@@ -285,49 +295,13 @@ private struct AssistantMessage: View {
                 }
             }
 
+            if !isStreaming, item.usage != nil || item.stopped == true {
+                MessageFooter(usage: item.usage, stopped: item.stopped == true)
+            }
+
             if !item.sources.isEmpty {
                 SourceList(sources: item.sources)
             }
-        }
-    }
-}
-
-private struct ActivityRow: View {
-    let activity: ToolActivity
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Group {
-                switch activity.state {
-                case .running:
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(Palette.textMuted)
-                case .done:
-                    Image(systemName: icon)
-                        .foregroundStyle(Palette.cyan)
-                case .failed:
-                    Image(systemName: "exclamationmark.circle")
-                        .foregroundStyle(Palette.red)
-                }
-            }
-            .frame(width: 16)
-            Text(activity.title)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(Palette.textMuted)
-        }
-        .font(.footnote)
-    }
-
-    private var icon: String {
-        switch activity.toolName {
-        case "web_search": "magnifyingglass"
-        case "fetch_page": "doc.text"
-        case "write_file": "doc.badge.plus"
-        case "save_note": "brain"
-        case "read_notes": "list.bullet.rectangle"
-        default: "wrench.and.screwdriver"
         }
     }
 }
