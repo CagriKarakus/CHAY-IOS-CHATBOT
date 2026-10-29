@@ -4,6 +4,7 @@ import Foundation
 public struct WebSearchTool: Tool {
     private struct Arguments: Decodable {
         let query: String
+        let max_results: Int?
     }
 
     private struct TavilyRequest: Encodable {
@@ -27,19 +28,28 @@ public struct WebSearchTool: Tool {
         "type": "object",
         "properties": [
             "query": ["type": "string", "description": "Arama sorgusu"],
+            "max_results": [
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "Kaç sonuç dönsün. Tek bir olgu (hava durumu, kur, skor, tarih) için 1-2; normal sorular için 3; karşılaştırma veya kapsamlı araştırma için 5-10.",
+            ],
         ],
         "required": ["query"],
     ]
 
+    static let resultLimit = 1...10
+
     private let apiKey: String
     private let transport: any HTTPTransport
-    private let maxResults: Int
+    private let defaultMaxResults: Int
     private let endpoint = URL(string: "https://api.tavily.com/search")!
 
-    public init(apiKey: String, transport: any HTTPTransport, maxResults: Int = 5) {
+    /// `defaultMaxResults`: model `max_results` vermezse kullanılır.
+    public init(apiKey: String, transport: any HTTPTransport, defaultMaxResults: Int = 3) {
         self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         self.transport = transport
-        self.maxResults = maxResults
+        self.defaultMaxResults = defaultMaxResults
     }
 
     public func activity(for arguments: String) -> String? {
@@ -47,8 +57,10 @@ public struct WebSearchTool: Tool {
     }
 
     public func run(arguments: String) async throws -> ToolOutput {
-        let query = try decodeArguments(Arguments.self, from: arguments).query
+        let arguments = try decodeArguments(Arguments.self, from: arguments)
+        let query = arguments.query
         guard !apiKey.isEmpty else { throw ToolError.missingAPIKey(service: "Tavily") }
+        let maxResults = (arguments.max_results ?? defaultMaxResults).clamped(to: Self.resultLimit)
 
         let request = HTTPRequest(
             url: endpoint,
@@ -71,5 +83,11 @@ public struct WebSearchTool: Tool {
             URL(string: result.url).map { Source(title: result.title, url: $0) }
         }
         return ToolOutput(content: untrustedContent(listing, source: "web_search: \(query)"), sources: sources)
+    }
+}
+
+private extension Int {
+    func clamped(to range: ClosedRange<Int>) -> Int {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }

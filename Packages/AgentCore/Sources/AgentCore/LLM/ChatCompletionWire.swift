@@ -5,6 +5,20 @@ struct ChatCompletionRequest: Encodable {
     let messages: [ChatMessage]
     let stream: Bool
     let tools: [ToolDefinition]?
+    let reasoningEffort: ReasoningEffort?
+
+    enum CodingKeys: String, CodingKey {
+        case model, messages, stream, tools
+        case reasoningEffort = "reasoning_effort"
+    }
+}
+
+/// `GET /models` yanıtı.
+struct ModelList: Decodable {
+    struct Model: Decodable {
+        let id: String
+    }
+    let data: [Model]
 }
 
 /// İstekteki `tools` dizisinin bir elemanı.

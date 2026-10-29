@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var path: [Route] = []
     @State private var showingSettings = false
     @State private var openedDocument: DocumentFile?
+    @State private var selectingText: SelectableTextItem?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -81,6 +82,9 @@ struct ChatView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            .sheet(item: $selectingText) { item in
+                SelectableTextSheet(item: item)
+            }
             .sheet(item: $openedDocument) { document in
                 NavigationStack {
                     DocumentView(document: document)
@@ -112,7 +116,8 @@ struct ChatView: View {
                             AssistantMessage(
                                 item: item,
                                 isStreaming: viewModel.isStreaming && item.id == viewModel.items.last?.id,
-                                openDocument: { openedDocument = $0 }
+                                openDocument: { openedDocument = $0 },
+                                selectText: { selectingText = SelectableTextItem(text: $0) }
                             )
                             .id(item.id)
                         }
@@ -170,7 +175,9 @@ struct ChatView: View {
                 .focused($inputFocused)
                 .foregroundStyle(Palette.textBright)
                 .tint(Palette.blue)
-            HStack {
+            HStack(spacing: 8) {
+                ModelMenu()
+                EffortMenu()
                 Spacer()
                 Button {
                     inputFocused = false
@@ -205,10 +212,14 @@ private struct UserMessage: View {
             Spacer(minLength: 48)
             Text(text)
                 .foregroundStyle(Palette.textBright)
-                .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Palette.elevated, in: .rect(cornerRadius: 18))
+                .contextMenu {
+                    Button("Kopyala", systemImage: "doc.on.doc") {
+                        UIPasteboard.general.string = text
+                    }
+                }
         }
     }
 }
@@ -218,6 +229,7 @@ private struct AssistantMessage: View {
     let item: ChatItem
     let isStreaming: Bool
     let openDocument: (DocumentFile) -> Void
+    let selectText: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -232,8 +244,17 @@ private struct AssistantMessage: View {
             if !item.text.isEmpty {
                 Markdown(item.text)
                     .markdownTheme(.atomOneDark)
-                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button("Kopyala", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = plainText(fromMarkdown: item.text)
+                        }
+                        Button("Metni seç", systemImage: "selection.pin.in.out") {
+                            selectText(plainText(fromMarkdown: item.text))
+                        }
+                    }
+                    .disabled(isStreaming)
             } else if isStreaming, item.activities.allSatisfy({ $0.state != .running }) {
                 ProgressView()
                     .tint(Palette.textMuted)
