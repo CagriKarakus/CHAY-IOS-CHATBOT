@@ -13,7 +13,7 @@ struct UsageView: View {
                     ForEach(provider.models) { model in
                         row(model.name, usage.totals(providerID: provider.id, model: model.name))
                     }
-                    row("Toplam", usage.totals(providerID: provider.id), emphasized: true)
+                    row(L("Total", "Toplam"), usage.totals(providerID: provider.id), emphasized: true)
                 } header: {
                     header(provider.name)
                 }
@@ -22,7 +22,7 @@ struct UsageView: View {
 
             Section {
                 HStack {
-                    Text("Arama sayısı")
+                    Text(L("Searches", "Arama sayısı"))
                         .foregroundStyle(Palette.textBright)
                     Spacer()
                     Text(usage.tavilySearches.formatted())
@@ -32,23 +32,23 @@ struct UsageView: View {
             } header: {
                 header("Tavily")
             } footer: {
-                footer("Her temel arama Tavily'de 1 kredi kullanır.")
+                footer(L("Each basic search uses 1 Tavily credit.", "Her temel arama Tavily'de 1 kredi kullanır."))
             }
             .listRowBackground(Palette.surface)
 
             Section {
-                Button("Sayaçları sıfırla", role: .destructive) { confirmingReset = true }
+                Button(L("Reset Counters", "Sayaçları sıfırla"), role: .destructive) { confirmingReset = true }
             } footer: {
-                footer("\(usage.since.formatted(date: .abbreviated, time: .omitted)) tarihinden beri. Token sayıları sağlayıcının bildirdiği değerlerdir; sağlayıcı bildirmezse sayılmaz.")
+                footer(L("Since \(usage.since.formatted(date: .abbreviated, time: .omitted)). Token counts are reported by the provider; if it doesn't report them, they aren't counted.", "\(usage.since.formatted(date: .abbreviated, time: .omitted)) tarihinden beri. Token sayıları sağlayıcının bildirdiği değerlerdir; sağlayıcı bildirmezse sayılmaz."))
             }
             .listRowBackground(Palette.surface)
         }
         .scrollContentBackground(.hidden)
         .background(Palette.background)
-        .navigationTitle("Kullanım")
+        .navigationTitle(L("Usage", "Kullanım"))
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Tüm kullanım sayaçları sıfırlansın mı?", isPresented: $confirmingReset, titleVisibility: .visible) {
-            Button("Sıfırla", role: .destructive) { usage.reset() }
+        .confirmationDialog(L("Reset all usage counters?", "Tüm kullanım sayaçları sıfırlansın mı?"), isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button(L("Reset", "Sıfırla"), role: .destructive) { usage.reset() }
         }
     }
 
@@ -64,7 +64,7 @@ struct UsageView: View {
                     .foregroundStyle(Palette.text)
                     .monospacedDigit()
             }
-            Text("Giriş \(totals.promptTokens.formatted()) · Çıkış \(totals.completionTokens.formatted()) · \(totals.requests.formatted()) istek")
+            Text(L("Input \(totals.promptTokens.formatted()) · Output \(totals.completionTokens.formatted()) · \(totals.requests.formatted()) requests", "Giriş \(totals.promptTokens.formatted()) · Çıkış \(totals.completionTokens.formatted()) · \(totals.requests.formatted()) istek"))
                 .font(.caption)
                 .foregroundStyle(Palette.textMuted)
                 .monospacedDigit()

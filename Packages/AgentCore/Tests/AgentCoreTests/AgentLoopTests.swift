@@ -9,7 +9,7 @@ private struct EchoTool: Tool {
     let parameters: JSONValue = ["type": "object"]
     var fails = false
 
-    func activity(for arguments: String) -> String? { "Echo: \(arguments)" }
+    func activityDetail(for arguments: String) -> String? { arguments }
 
     func run(arguments: String) async throws -> ToolOutput {
         if fails { throw ToolError.http(status: 500) }
@@ -29,7 +29,7 @@ private struct EchoTool: Tool {
     let call = ToolCall(id: "c1", name: "echo", arguments: #"{"x":1}"#)
     #expect(events == [
         .message(ChatMessage(role: .assistant, content: nil, toolCalls: [call])),
-        .toolStarted(id: "c1", name: "echo", activity: #"Echo: {"x":1}"#),
+        .toolStarted(id: "c1", name: "echo", detail: #"{"x":1}"#),
         .toolFinished(id: "c1", sources: [Source(title: "Kaynak", url: URL(string: "https://a.com")!)], files: [], failed: false),
         .message(ChatMessage(role: .tool, content: #"echo {"x":1}"#, toolCallID: "c1")),
         .text("Bitti"),
@@ -65,7 +65,7 @@ private struct EchoTool: Tool {
     let events = try await collect(loop.run([]))
 
     #expect(events.contains(.toolFinished(id: "c1", sources: [], files: [], failed: true)))
-    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Hata: HTTP 500 hatası.", toolCallID: "c1"))))
+    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Error: HTTP error 500.", toolCallID: "c1"))))
 }
 
 @Test func unknownToolIsReported() async throws {
@@ -77,7 +77,7 @@ private struct EchoTool: Tool {
 
     let events = try await collect(loop.run([]))
 
-    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Hata: 'rm_rf' adında bir araç yok.", toolCallID: "c1"))))
+    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Error: there is no tool named 'rm_rf'.", toolCallID: "c1"))))
     #expect(transport.requests.count == 2)
 }
 
@@ -86,13 +86,13 @@ private struct EchoTool: Tool {
 
     let prompt = SystemPrompt.make(now: date, timeZone: try #require(TimeZone(identifier: "Europe/Istanbul")))
 
-    #expect(prompt.contains("29 Ekim 2026"))
+    #expect(prompt.contains("Thursday, 29 October 2026, 12:00"))
     #expect(prompt.contains("web_search"))
-    #expect(!prompt.contains("kişisel talimatları"))
+    #expect(!prompt.contains("personal instructions"))
 }
 
 @Test func systemPromptAppendsUserInstructions() {
     let prompt = SystemPrompt.make(userInstructions: "  Emoji kullanma.\n")
 
-    #expect(prompt.hasSuffix("Kullanıcının kişisel talimatları (bunlara her zaman uy):\nEmoji kullanma."))
+    #expect(prompt.hasSuffix("The user's personal instructions (always follow them):\nEmoji kullanma."))
 }

@@ -23,7 +23,7 @@ struct ModelMenu: View {
                 }
             }
         } label: {
-            Chip(title: settings.selected?.model.name ?? "Model seç", systemImage: "cpu")
+            Chip(title: settings.selected?.model.name ?? L("Choose Model", "Model seç"), systemImage: "cpu")
         }
         .disabled(settings.providers.allSatisfy(\.models.isEmpty))
     }
@@ -36,17 +36,17 @@ struct EffortMenu: View {
     var body: some View {
         if let model = settings.selected?.model, model.supportsEffort {
             Menu {
-                Picker("Efor", selection: Binding(
+                Picker(L("Effort", "Efor"), selection: Binding(
                     get: { model.effort },
                     set: { settings.setEffort($0, for: model.id) }
                 )) {
-                    Text("Varsayılan").tag(ReasoningEffort?.none)
+                    Text(L("Default", "Varsayılan")).tag(ReasoningEffort?.none)
                     ForEach(ReasoningEffort.allCases, id: \.self) { effort in
                         Text(effort.title).tag(ReasoningEffort?.some(effort))
                     }
                 }
             } label: {
-                Chip(title: model.effort?.title ?? "Efor", systemImage: "gauge.with.dots.needle.50percent")
+                Chip(title: model.effort?.title ?? L("Effort", "Efor"), systemImage: "gauge.with.dots.needle.50percent")
             }
         }
     }

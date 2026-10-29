@@ -8,11 +8,11 @@ public struct FetchPageTool: Tool {
     }
 
     public let name = "fetch_page"
-    public let description = "Bir web sayfasının metnini okur. Arama sonuçlarındaki bir sayfanın ayrıntısı gerektiğinde kullan."
+    public let description = "Reads the text of a web page. Use it when you need the details of a page from the search results."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
-            "url": ["type": "string", "description": "Okunacak sayfanın https:// adresi"],
+            "url": ["type": "string", "description": "https:// URL of the page to read"],
         ],
         "required": ["url"],
     ]
@@ -26,9 +26,9 @@ public struct FetchPageTool: Tool {
         self.maxCharacters = maxCharacters
     }
 
-    public func activity(for arguments: String) -> String? {
+    public func activityDetail(for arguments: String) -> String? {
         guard let raw = try? decodeArguments(Arguments.self, from: arguments).url else { return nil }
-        return "Okunuyor: \(URL(string: raw)?.host ?? raw)"
+        return URL(string: raw)?.host ?? raw
     }
 
     public func run(arguments: String) async throws -> ToolOutput {
@@ -59,9 +59,9 @@ public struct FetchPageTool: Tool {
             throw ToolError.unsupportedContent(contentType)
         }
 
-        var content = "Başlık: \(title)\n\n" + String(text.prefix(maxCharacters))
+        var content = "Title: \(title)\n\n" + String(text.prefix(maxCharacters))
         if text.count > maxCharacters {
-            content += "\n\n[Sayfa \(maxCharacters) karakterde kırpıldı.]"
+            content += "\n\n[Page truncated at \(maxCharacters) characters.]"
         }
         return ToolOutput(content: untrustedContent(content, source: url.absoluteString), sources: [Source(title: title, url: url)])
     }
@@ -73,6 +73,6 @@ public struct FetchPageTool: Tool {
         let title = try document.title().trimmingCharacters(in: .whitespacesAndNewlines)
         let root = try document.select("article, main").first() ?? document.body()
         let text = try root?.text() ?? ""
-        return (title.isEmpty ? "Başlıksız sayfa" : title, text)
+        return (title.isEmpty ? "Untitled page" : title, text)
     }
 }

@@ -56,14 +56,14 @@ struct DocumentsView: View {
         .overlay {
             if documents.isEmpty {
                 ContentUnavailableView(
-                    "Henüz doküman yok",
+                    L("No documents yet", "Henüz doküman yok"),
                     systemImage: "doc.text",
-                    description: Text("Asistandan bir konu hakkında md dosyası oluşturmasını iste.")
+                    description: Text(L("Ask the assistant to create an md file about a topic.", "Asistandan bir konu hakkında md dosyası oluşturmasını iste."))
                 )
                 .foregroundStyle(Palette.textMuted)
             }
         }
-        .navigationTitle("Dokümanlar")
+        .navigationTitle(L("Documents", "Dokümanlar"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -91,7 +91,7 @@ struct DocumentView: View {
                         .markdownTheme(.atomOneDark)
                         .textSelection(.enabled)
                 } else {
-                    Text("Dosya okunamadı.")
+                    Text(L("Couldn't read the file.", "Dosya okunamadı."))
                         .foregroundStyle(Palette.red)
                 }
             }
@@ -108,7 +108,7 @@ struct DocumentView: View {
                 ShareLink(item: document.url) {
                     Image(systemName: "square.and.arrow.up")
                 }
-                .accessibilityLabel("Paylaş")
+                .accessibilityLabel(L("Share", "Paylaş"))
             }
         }
         .onAppear {

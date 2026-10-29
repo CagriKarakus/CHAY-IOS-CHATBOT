@@ -4,7 +4,7 @@ public enum AgentEvent: Equatable, Sendable {
     /// Cevap metninin bir parçası.
     case text(String)
     /// Bir araç çalışmaya başladı. `id` araç çağrısının kimliği.
-    case toolStarted(id: String, name: String, activity: String)
+    case toolStarted(id: String, name: String, detail: String?)
     case toolFinished(id: String, sources: [Source], files: [URL], failed: Bool)
     /// Geçmişe eklenmesi gereken tam bir mesaj (araç çağrısı, araç sonucu veya final cevap).
     case message(ChatMessage)
@@ -15,7 +15,8 @@ public enum AgentEvent: Equatable, Sendable {
 /// Kullanıcıdan onay istenen araç çağrısı.
 public struct ApprovalRequest: Equatable, Sendable {
     public let toolName: String
-    public let activity: String
+    /// Aracın ayrıntısı (örn. kaydedilecek not).
+    public let detail: String?
 }
 
 /// Model araç istedikçe araçları çalıştırıp sonucu geri veren döngü.
@@ -95,21 +96,21 @@ public struct AgentLoop: Sendable {
     /// Aracı çalıştırır; hataları modele metin olarak döner ki model toparlayabilsin.
     private func execute(_ call: ToolCall, conversation: [ChatMessage], emit: (AgentEvent) -> Void) async throws -> ChatMessage {
         guard let tool = tools[call.function.name] else {
-            emit(.toolStarted(id: call.id, name: call.function.name, activity: call.function.name))
+            emit(.toolStarted(id: call.id, name: call.function.name, detail: nil))
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
-            return ChatMessage(role: .tool, content: "Hata: '\(call.function.name)' adında bir araç yok.", toolCallID: call.id)
+            return ChatMessage(role: .tool, content: "Error: there is no tool named '\(call.function.name)'.", toolCallID: call.id)
         }
 
-        let activity = tool.activity(for: call.function.arguments) ?? tool.name
-        emit(.toolStarted(id: call.id, name: tool.name, activity: activity))
+        let detail = tool.activityDetail(for: call.function.arguments)
+        emit(.toolStarted(id: call.id, name: tool.name, detail: detail))
 
         // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler kullanıcı onayı olmadan yapılmaz.
         if tool.requiresApprovalAfterUntrustedContent, containsUntrustedContent(conversation) {
-            let approved = await approve(ApprovalRequest(toolName: tool.name, activity: activity))
+            let approved = await approve(ApprovalRequest(toolName: tool.name, detail: detail))
             try Task.checkCancellation()
             guard approved else {
                 emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
-                return ChatMessage(role: .tool, content: "Kullanıcı bu işlemi onaylamadı; tekrar deneme.", toolCallID: call.id)
+                return ChatMessage(role: .tool, content: "The user declined this action; do not retry it.", toolCallID: call.id)
             }
         }
 
@@ -121,7 +122,7 @@ public struct AgentLoop: Sendable {
             throw CancellationError()
         } catch {
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
-            return ChatMessage(role: .tool, content: "Hata: \(error.localizedDescription)", toolCallID: call.id)
+            return ChatMessage(role: .tool, content: "Error: \(error.localizedDescription)", toolCallID: call.id)
         }
     }
 

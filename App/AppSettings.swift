@@ -111,7 +111,7 @@ final class AppSettings {
 
         provider.baseURL = url.absoluteString
         provider.name = provider.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if provider.name.isEmpty { provider.name = url.host ?? "Sağlayıcı" }
+        if provider.name.isEmpty { provider.name = url.host ?? L("Provider", "Sağlayıcı") }
 
         var seen = Set<String>()
         provider.models = provider.models.compactMap { model in
@@ -168,7 +168,7 @@ final class AppSettings {
         let modelName = defaults.string(forKey: Keys.legacyModel) ?? ""
         let model = ModelProfile(name: modelName)
         let provider = Provider(
-            name: URL(string: baseURL)?.host ?? "Sağlayıcı",
+            name: URL(string: baseURL)?.host ?? L("Provider", "Sağlayıcı"),
             baseURL: baseURL,
             models: modelName.isEmpty ? [] : [model]
         )
@@ -189,9 +189,9 @@ final class AppSettings {
 extension ReasoningEffort {
     var title: String {
         switch self {
-        case .low: "Düşük"
-        case .medium: "Orta"
-        case .high: "Yüksek"
+        case .low: L("Low", "Düşük")
+        case .medium: L("Medium", "Orta")
+        case .high: L("High", "Yüksek")
         }
     }
 }

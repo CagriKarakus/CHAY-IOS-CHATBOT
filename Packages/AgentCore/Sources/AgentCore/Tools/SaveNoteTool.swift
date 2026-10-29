@@ -10,11 +10,11 @@ public struct SaveNoteTool: Tool {
     public static let maxLength = 500
 
     public let name = "save_note"
-    public let description = "Kullanıcı hakkında kalıcı bir bilgiyi veya tercihi hafızaya kısa bir not olarak kaydeder. Not sonraki sohbetlerde de hatırlanır."
+    public let description = "Saves a lasting fact or preference about the user to memory as a short note. The note is remembered in future chats."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
-            "content": ["type": "string", "description": "Tek cümlelik not, örn. 'Kullanıcı emoji kullanılmasını sevmiyor.'"],
+            "content": ["type": "string", "description": "One-sentence note, e.g. 'The user dislikes emoji.'"],
         ],
         "required": ["content"],
     ]
@@ -26,8 +26,8 @@ public struct SaveNoteTool: Tool {
         self.store = store
     }
 
-    public func activity(for arguments: String) -> String? {
-        (try? decodeArguments(Arguments.self, from: arguments)).map { "Hafızaya kaydediliyor: \($0.content.trimmingCharacters(in: .whitespacesAndNewlines))" }
+    public func activityDetail(for arguments: String) -> String? {
+        (try? decodeArguments(Arguments.self, from: arguments))?.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func run(arguments: String) async throws -> ToolOutput {
@@ -38,9 +38,9 @@ public struct SaveNoteTool: Tool {
 
         let existing = try await store.allNotes()
         if existing.contains(where: { $0.content.caseInsensitiveCompare(content) == .orderedSame }) {
-            return ToolOutput(content: "Bu not zaten kayıtlı.")
+            return ToolOutput(content: "This note is already saved.")
         }
         try await store.addNote(content)
-        return ToolOutput(content: "Hafızaya kaydedildi: \(content)")
+        return ToolOutput(content: "Saved to memory: \(content)")
     }
 }

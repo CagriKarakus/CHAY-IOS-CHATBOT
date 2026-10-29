@@ -20,7 +20,7 @@ private func arguments(_ filename: String, _ content: String) throws -> String {
     let url = try #require(output.files.first)
     #expect(url.lastPathComponent == "Yapay Zeka Özeti.md")
     #expect(try String(contentsOf: url, encoding: .utf8) == "# Başlık\n\nİçerik")
-    #expect(output.content.contains("Dosya kaydedildi: Yapay Zeka Özeti.md"))
+    #expect(output.content.contains("File saved: Yapay Zeka Özeti.md"))
 }
 
 @Test func updatesExistingFileInPlace() async throws {
@@ -32,7 +32,7 @@ private func arguments(_ filename: String, _ content: String) throws -> String {
     let second = try await tool.run(arguments: try arguments("not.md", "ikinci"))
 
     #expect(second.files.first?.lastPathComponent == "not.md")
-    #expect(second.content.hasPrefix("Dosya güncellendi: not.md"))
+    #expect(second.content.hasPrefix("File updated: not.md"))
     #expect(try String(contentsOf: directory.appendingPathComponent("not.md"), encoding: .utf8) == "ikinci")
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
 }
@@ -59,5 +59,5 @@ func rejectsUnsafeFilenames(_ raw: String) {
 @Test func writeFileActivityShowsCleanName() throws {
     let tool = WriteFileTool(directory: makeTemporaryDirectory())
 
-    #expect(tool.activity(for: try arguments("rapor.txt", "")) == "Dosya yazılıyor: rapor.md")
+    #expect(tool.activityDetail(for: try arguments("rapor.txt", "")) == "rapor.md")
 }

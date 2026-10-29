@@ -78,7 +78,7 @@ private func usages(_ events: [LLMStreamEvent]) -> [TokenUsage] {
     let repaired = history.closingUnansweredToolCalls()
 
     #expect(repaired.count == 4)
-    #expect(repaired.last == ChatMessage(role: .tool, content: "İptal edildi.", toolCallID: "b"))
+    #expect(repaired.last == ChatMessage(role: .tool, content: "Cancelled by the user.", toolCallID: "b"))
     #expect(repaired.closingUnansweredToolCalls() == repaired)
     let plain = [ChatMessage(role: .user, content: "Selam"), ChatMessage(role: .assistant, content: "Merhaba")]
     #expect(plain.closingUnansweredToolCalls() == plain)
@@ -99,7 +99,7 @@ private let longPage = "<untrusted_content source=\"x\">\n" + String(repeating: 
 
     let trimmed = ContextCompactor.trimmingOldToolResults(history, maxCharacters: 100)
 
-    #expect(trimmed[1].content?.count == 100 + "\n[…kısaltıldı]".count)
+    #expect(trimmed[1].content?.count == 100 + "\n[…truncated]".count)
     #expect(trimmed[1].content?.hasPrefix("<untrusted_content") == true)
     #expect(trimmed[4].content == longPage)
     #expect(Array(trimmed[0...0]) + Array(trimmed[2...3]) == Array(history[0...0]) + Array(history[2...3]))
@@ -138,15 +138,15 @@ private let longPage = "<untrusted_content source=\"x\">\n" + String(repeating: 
     #expect(body["tools"] == nil)
     let sent = try #require(body["messages"] as? [[String: Any]])
     let input = try #require(sent.last?["content"] as? String)
-    #expect(input.contains("Önceki özet:\nEski özet"))
-    #expect(input.contains("Kullanıcı: Roma'ya gideceğim"))
-    #expect(input.contains("Asistan: Harika"))
+    #expect(input.contains("Previous summary:\nEski özet"))
+    #expect(input.contains("User: Roma'ya gideceğim"))
+    #expect(input.contains("Assistant: Harika"))
 }
 
 @Test func systemPromptIncludesSummary() {
     let prompt = SystemPrompt.make(summary: "- Roma gezisi", userInstructions: "Kısa yaz.")
 
-    #expect(prompt.contains("önceki kısmının özeti"))
+    #expect(prompt.contains("Summary of the earlier part of this conversation"))
     #expect(prompt.contains("- Roma gezisi"))
     #expect(prompt.hasSuffix("Kısa yaz."))
 }

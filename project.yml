@@ -2,6 +2,7 @@
 name: AIAssistant
 options:
   bundleIdPrefix: dev.cagri
+  developmentLanguage: en
   deploymentTarget:
     iOS: "17.0"
 
@@ -23,7 +24,10 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: AI Asistan
+        CFBundleDisplayName: AI Assistant
+        CFBundleDevelopmentRegion: en
+        # Uygulama metinleri Localization.swift'teki L(...) ile; bu liste iOS'un kendi metinleri için.
+        CFBundleLocalizations: [en, tr]
         UILaunchScreen: {}
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

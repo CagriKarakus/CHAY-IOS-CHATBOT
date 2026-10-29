@@ -14,7 +14,7 @@ import Testing
     #expect(output.content.contains("<untrusted_content"))
     #expect(output.content.contains("[1] Haber\nhttps://news.example.com/a\nÖzet metni"))
     #expect(output.sources == [Source(title: "Haber", url: URL(string: "https://news.example.com/a")!)])
-    #expect(tool.activity(for: #"{"query":"bugün"}"#) == "Aranıyor: bugün")
+    #expect(tool.activityDetail(for: #"{"query":"bugün"}"#) == "bugün")
 }
 
 @Test func webSearchRequiresKey() async throws {
@@ -39,7 +39,7 @@ import Testing
     await #expect(throws: ToolError.invalidArguments) {
         try await tool.run(arguments: "not json")
     }
-    #expect(tool.activity(for: "") == nil)
+    #expect(tool.activityDetail(for: "") == nil)
 }
 
 // MARK: - fetch_page
@@ -54,14 +54,14 @@ import Testing
 
     let output = try await tool.run(arguments: #"{"url":"https://example.com/yazi"}"#)
 
-    #expect(output.content.contains("Başlık: Örnek Sayfa"))
+    #expect(output.content.contains("Title: Örnek Sayfa"))
     #expect(output.content.contains("Başlık Asıl içerik."))
     #expect(!output.content.contains("Menü"))
     #expect(!output.content.contains("alert"))
     #expect(!output.content.contains("Telif"))
     #expect(output.content.contains("<untrusted_content source=\"https://example.com/yazi\">"))
     #expect(output.sources == [Source(title: "Örnek Sayfa", url: URL(string: "https://example.com/yazi")!)])
-    #expect(tool.activity(for: #"{"url":"https://example.com/yazi"}"#) == "Okunuyor: example.com")
+    #expect(tool.activityDetail(for: #"{"url":"https://example.com/yazi"}"#) == "example.com")
 }
 
 @Test func fetchPageTruncatesLongPages() async throws {
@@ -70,7 +70,7 @@ import Testing
 
     let output = try await tool.run(arguments: #"{"url":"https://example.com/x.txt"}"#)
 
-    #expect(output.content.contains(String(repeating: "a", count: 100) + "\n\n[Sayfa 100 karakterde kırpıldı.]"))
+    #expect(output.content.contains(String(repeating: "a", count: 100) + "\n\n[Page truncated at 100 characters.]"))
     #expect(!output.content.contains(String(repeating: "a", count: 101)))
 }
 

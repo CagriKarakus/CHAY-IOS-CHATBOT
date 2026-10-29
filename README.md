@@ -1,68 +1,80 @@
-# AI Asistan (iOS)
+# AI Assistant for iOS
 
-Kullanıcının kendi LLM key'iyle çalışan, web araştırması yapan, Markdown doküman üreten ve hafıza tutan native iOS asistanı. Geliştirme **Windows** üzerinde yapılır; iOS build'i GitHub Actions'taki macOS runner'ında alınır ve `.ipa` telefona sideload edilir.
+**English** · [Türkçe](README.tr.md)
 
-## Yapı
+A native iOS assistant that runs on **your own LLM API key**. It can research the web, write Markdown documents, remember things about you and work with any OpenAI-compatible endpoint. All agent logic runs on the phone; there is no backend server and your data only goes to the providers you configure.
 
-| Klasör | İçerik | Nerede derlenir/test edilir |
+## Features
+
+- **Streaming chat** with any OpenAI-compatible `/chat/completions` endpoint
+- **Multiple providers and models**: add several endpoints (base URL + key) with any number of models each, fetch the model list from the server, and switch models from the chat screen
+- **Reasoning effort** (low / medium / high) for models that support `reasoning_effort`
+- **Web research** with [Tavily](https://tavily.com): the model decides how many searches and results a question needs, reads pages and cites sources
+- **Markdown documents**: the assistant writes `.md` files that show up in the Files app; view and share them in the app
+- **Memory**: lasting facts and preferences are saved as notes and shared with every chat; notes can be edited or deleted
+- **Personal instructions** added to every chat (e.g. "don't use emoji")
+- **Saved chats**, readable network errors with *Try again*, and finishing a reply in the background
+- **Control and transparency**: stop button, collapsible tool log, token usage and tokens/second per reply, usage totals per provider and model, Tavily search count
+- **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
+- **English and Turkish** interface
+- Atom One Dark theme
+
+## Security
+
+- API keys are stored only in the Keychain (`WhenUnlockedThisDeviceOnly`) and never logged
+- HTTPS only; no App Transport Security exceptions
+- Web content is passed to the model as clearly marked data with an instruction not to follow it
+- After web content was read, saving to memory requires your approval
+- The file tool can only write plain `.md` names inside the app's Documents folder
+- Each request is capped at a fixed number of model calls
+
+## Architecture
+
+| Folder | Contents | Built and tested on |
 | --- | --- | --- |
-| `Packages/AgentCore/` | LLM istemcisi, agent loop, araçlar. Apple'a özel framework yok. | Windows (`swift test`) + CI |
-| `App/` | SwiftUI, SwiftData, Keychain gibi iOS'a özel katman | Sadece CI (macOS) |
-| `project.yml` | XcodeGen proje tanımı (`.xcodeproj` repoda tutulmaz) | CI |
-| `.github/workflows/ios.yml` | Test + imzasız `.ipa` üretimi | GitHub Actions |
-| `scripts/faz0.ps1` | LLM endpoint doğrulaması ve SSE fixture kaydı | Windows |
+| `Packages/AgentCore/` | LLM client (SSE), agent loop, tools, context compaction. No Apple-only frameworks. | Windows (`swift test`) and CI |
+| `App/` | SwiftUI, SwiftData, Keychain and other iOS-specific code | CI (macOS) |
+| `project.yml` | [XcodeGen](https://github.com/yonaskolb/XcodeGen) project definition (the `.xcodeproj` is not committed) | CI |
+| `.github/workflows/ios.yml` | Tests and an unsigned `.ipa` build | GitHub Actions |
+| `scripts/faz0.ps1` | Checks an endpoint for streaming and tool calling and records SSE fixtures | Windows |
 
-## Geliştirme ortamı (Windows)
+## Development without a Mac
 
-1. **Git ve GitHub CLI** (kurulu): `gh auth login`
-2. **Visual Studio Build Tools**, "Desktop development with C++" iş yüküyle:
-   ```powershell
-   winget install --id Microsoft.VisualStudio.2022.BuildTools
-   ```
-   Kurulumdan sonra Visual Studio Installer'da *Desktop development with C++* iş yükünü işaretle.
-3. **Swift toolchain:**
+The project is developed on Windows. Logic lives in `AgentCore` and is tested locally; the iOS app is built by GitHub Actions on macOS and sideloaded.
+
+1. Install **Git** and the **GitHub CLI**, then run `gh auth login`.
+2. Install **Visual Studio Build Tools** with *MSVC x64/x86* and the *Windows 11 SDK*, then the **Swift toolchain**:
    ```powershell
    winget install --id Swift.Toolchain
    ```
-   Yeni bir terminalde `swift --version` çalışmalı.
-4. **VS Code** + **Swift** eklentisi (`swiftlang.swift-vscode`).
-5. **iTunes**: Apple'ın sitesinden indirilen sürüm (Microsoft Store sürümü değil). iPhone'u USB'den tanıyan sürücüleri getirir.
-6. **Sideloadly** (veya AltServer + AltStore): `.ipa`'yı Apple ID ile imzalayıp telefona yükler. Ana Apple ID'n yerine **sadece geliştirme için ayrı bir Apple ID** kullan.
-
-Kontrol:
-
-```powershell
-swift test --package-path Packages/AgentCore
-```
-
-## Telefona yükleme
-
-1. `main`'e push et (veya Actions sekmesinden *iOS* workflow'unu elle çalıştır).
-2. Workflow bitince `.ipa`'yı indir:
+3. Run the tests:
    ```powershell
-   gh run download --name AIAssistant-ipa
+   swift test --package-path Packages/AgentCore
    ```
-3. iPhone'u USB ile bağla, Sideloadly'de `AIAssistant.ipa`'yı seçip geliştirme Apple ID'nle yükle.
-4. İlk yüklemede iPhone'da:
-   - *Ayarlar → Gizlilik ve Güvenlik → Geliştirici Modu* → aç (telefon yeniden başlar)
-   - *Ayarlar → Genel → VPN ve Aygıt Yönetimi* → geliştirici profiline güven
+4. Install **iTunes** (from apple.com, not the Microsoft Store) and **Sideloadly**. Use a separate Apple ID for development.
 
-Ücretsiz Apple hesabıyla imza **7 gün** geçerlidir; Sideloadly/AltStore ile yenilenir. Aynı anda en fazla 3 sideload uygulama olabilir.
+### Installing on an iPhone
 
-## Faz 0: Endpoint doğrulama
+1. Push to `main` (or run the *iOS* workflow manually).
+2. Download the build:
+   ```powershell
+   gh run download <run-id> --name AIAssistant-ipa
+   ```
+3. Install `AIAssistant.ipa` with Sideloadly. Installing over the existing app keeps your settings and data.
+4. On first install, enable *Settings → Privacy & Security → Developer Mode* and trust the developer profile under *Settings → General → VPN & Device Management*.
 
-Key'ler sadece kendi terminalinde kalır; repoya veya log'lara girmez.
+With a free Apple account the signature lasts 7 days; reinstalling renews it.
+
+### Checking an endpoint
 
 ```powershell
-$env:LLM_BASE_URL = "https://<router-adresi>/v1"
+$env:LLM_BASE_URL = "https://<router>/v1"
 $env:LLM_API_KEY  = "<api-key>"
-.\scripts\faz0.ps1 -Model "<model-adi>"
+powershell -ExecutionPolicy Bypass -File scripts\faz0.ps1 -Model "<model>"
 ```
 
-Script şunları yapar: model listesini çeker, `tools` içeren bir istekte `tool_calls` geldiğini kontrol eder, streaming metin ve streaming tool call yanıtlarını `Packages/AgentCore/Tests/AgentCoreTests/Fixtures/` altına `.sse` olarak kaydeder. Bu dosyalar Faz 1–2'deki parser testlerinin girdisidir.
+## Roadmap
 
-## Plan
-
-Faz E (ortam) → Faz 0 (endpoint) → Faz 1 (streaming sohbet) → Faz 2 (agent loop + web) → Faz 3 (Markdown) → Faz 4 (hafıza) → Faz 5 (kalıcılık) → Faz 6 (kontrol) → Faz 7 (iOS entegrasyonları).
-
-Her faz şu üç kontrolden geçmeden bir sonrakine geçilmez: Windows'ta `swift test` geçer, CI yeşil olur, telefonda o fazın doğrulama kriteri sağlanır.
+- Image and audio input, spoken replies and image generation for models that support them
+- Share Extension, Face ID lock, PDF input, voice input
+- Siri / Shortcuts, remote MCP servers, on-device models, iCloud sync

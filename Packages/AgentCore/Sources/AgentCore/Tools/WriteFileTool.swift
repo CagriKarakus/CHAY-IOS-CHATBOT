@@ -9,12 +9,12 @@ public struct WriteFileTool: Tool {
     }
 
     public let name = "write_file"
-    public let description = "Markdown (.md) dosyası oluşturur ve kullanıcının Dosyalar uygulamasında görünen klasöre kaydeder. Kullanıcı doküman, rapor veya özet dosyası istediğinde kullan."
+    public let description = "Creates a Markdown (.md) file in the folder the user sees in the Files app. Use it when the user asks for a document, report or summary file. Writing to an existing name replaces that file."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
-            "filename": ["type": "string", "description": "Dosya adı, örn. 'yapay-zeka-ozeti.md'. Klasör içermez."],
-            "content": ["type": "string", "description": "Dosyanın Markdown içeriği"],
+            "filename": ["type": "string", "description": "File name, e.g. 'ai-summary.md'. No folders."],
+            "content": ["type": "string", "description": "Markdown content of the file"],
         ],
         "required": ["filename", "content"],
     ]
@@ -25,9 +25,9 @@ public struct WriteFileTool: Tool {
         self.directory = directory
     }
 
-    public func activity(for arguments: String) -> String? {
+    public func activityDetail(for arguments: String) -> String? {
         guard let raw = try? decodeArguments(Arguments.self, from: arguments).filename else { return nil }
-        return "Dosya yazılıyor: \((try? Self.sanitizedFilename(raw)) ?? raw)"
+        return (try? Self.sanitizedFilename(raw)) ?? raw
     }
 
     public func run(arguments: String) async throws -> ToolOutput {
@@ -40,7 +40,7 @@ public struct WriteFileTool: Tool {
         try Data(arguments.content.utf8).write(to: url, options: .atomic)
 
         return ToolOutput(
-            content: "Dosya \(existed ? "güncellendi" : "kaydedildi"): \(url.lastPathComponent) (\(arguments.content.count) karakter). Kullanıcı dosyayı uygulamadaki Dokümanlar ekranında veya Dosyalar uygulamasında açabilir.",
+            content: "File \(existed ? "updated" : "saved"): \(url.lastPathComponent) (\(arguments.content.count) characters). The user can open it from the Documents screen or the Files app.",
             files: [url]
         )
     }

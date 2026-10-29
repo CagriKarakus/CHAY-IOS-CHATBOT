@@ -20,15 +20,15 @@ struct ProviderEditorView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Ad", text: $draft.name, prompt: prompt("Ad (örn. Evren)"))
+                TextField(L("Name", "Ad"), text: $draft.name, prompt: prompt(L("Name (e.g. Evren)", "Ad (örn. Evren)")))
                 TextField("Base URL", text: $draft.baseURL, prompt: prompt("https://router.example.com/v1"))
                     .keyboardType(.URL)
                     .textContentType(.URL)
                 SecureField("API key", text: $apiKey, prompt: prompt("API key"))
             } header: {
-                header("Bağlantı")
+                header(L("Connection", "Bağlantı"))
             } footer: {
-                footer("OpenAI-uyumlu endpoint'in /v1 dahil adresi. Sadece HTTPS. Key yalnızca bu cihazın Keychain'inde saklanır.")
+                footer(L("Address of the OpenAI-compatible endpoint, including /v1. HTTPS only. The key is stored only in this device's Keychain.", "OpenAI-uyumlu endpoint'in /v1 dahil adresi. Sadece HTTPS. Key yalnızca bu cihazın Keychain'inde saklanır."))
             }
             .listRowBackground(Palette.surface)
 
@@ -38,7 +38,7 @@ struct ProviderEditorView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.name)
                                 .foregroundStyle(Palette.textBright)
-                            Text(model.supportsEffort ? "Efor seçilebilir" : "Efor seçimi kapalı")
+                            Text(model.supportsEffort ? L("Effort selectable", "Efor seçilebilir") : L("Effort selection off", "Efor seçimi kapalı"))
                                 .font(.caption)
                                 .foregroundStyle(Palette.textMuted)
                         }
@@ -47,7 +47,7 @@ struct ProviderEditorView: View {
                 .onDelete { draft.models.remove(atOffsets: $0) }
 
                 HStack {
-                    TextField("Model adı", text: $newModelName, prompt: prompt("Model adı ekle"))
+                    TextField(L("Model name", "Model adı"), text: $newModelName, prompt: prompt(L("Add model name", "Model adı ekle")))
                         .onSubmit(addModel)
                     Button(action: addModel) {
                         Image(systemName: "plus.circle.fill")
@@ -57,7 +57,7 @@ struct ProviderEditorView: View {
 
                 Button(action: fetchModels) {
                     HStack {
-                        Label("Sunucudan modelleri getir", systemImage: "arrow.down.circle")
+                        Label(L("Fetch Models from Server", "Sunucudan modelleri getir"), systemImage: "arrow.down.circle")
                         if isFetching {
                             Spacer()
                             ProgressView()
@@ -66,9 +66,9 @@ struct ProviderEditorView: View {
                 }
                 .disabled(isFetching)
             } header: {
-                header("Modeller")
+                header(L("Models", "Modeller"))
             } footer: {
-                footer("Model reasoning_effort destekliyorsa \"Efor\" anahtarını aç; sohbet ekranında Düşük/Orta/Yüksek seçebilirsin. Silmek için sola kaydır.")
+                footer(L("If a model supports reasoning_effort, turn on its switch to pick Low/Medium/High in the chat. Swipe left to delete.", "Model reasoning_effort destekliyorsa \"Efor\" anahtarını aç; sohbet ekranında Düşük/Orta/Yüksek seçebilirsin. Silmek için sola kaydır."))
             }
             .listRowBackground(Palette.surface)
 
@@ -82,7 +82,7 @@ struct ProviderEditorView: View {
 
             if provider != nil {
                 Section {
-                    Button("Sağlayıcıyı sil", role: .destructive) { confirmingDelete = true }
+                    Button(L("Delete Provider", "Sağlayıcıyı sil"), role: .destructive) { confirmingDelete = true }
                 }
                 .listRowBackground(Palette.surface)
             }
@@ -92,16 +92,16 @@ struct ProviderEditorView: View {
         .autocorrectionDisabled()
         .scrollContentBackground(.hidden)
         .background(Palette.background)
-        .navigationTitle(provider == nil ? "Yeni sağlayıcı" : draft.name)
+        .navigationTitle(provider == nil ? L("New Provider", "Yeni sağlayıcı") : draft.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Kaydet", action: save)
+                Button(L("Save", "Kaydet"), action: save)
                     .fontWeight(.semibold)
             }
         }
-        .confirmationDialog("Sağlayıcı ve modelleri silinsin mi?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Sil", role: .destructive) {
+        .confirmationDialog(L("Delete this provider and its models?", "Sağlayıcı ve modelleri silinsin mi?"), isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button(L("Delete", "Sil"), role: .destructive) {
                 if let provider { settings.deleteProvider(provider.id) }
                 dismiss()
             }
@@ -134,7 +134,7 @@ struct ProviderEditorView: View {
             do {
                 let names = try await LLMClient.listModels(baseURL: draft.baseURL, apiKey: apiKey, transport: URLSessionTransport())
                 if names.isEmpty {
-                    errorMessage = "Sunucu model listesi döndürmedi; model adlarını elle ekleyebilirsin."
+                    errorMessage = L("The server returned no models; you can add model names manually.", "Sunucu model listesi döndürmedi; model adlarını elle ekleyebilirsin.")
                 } else {
                     fetchedModels = FetchedModels(names: names)
                 }
@@ -149,7 +149,7 @@ struct ProviderEditorView: View {
             try settings.save(draft, apiKey: apiKey)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingMessage(for: error)
         }
     }
 }
@@ -185,7 +185,7 @@ private struct ModelPickerSheet: View {
                             .foregroundStyle(alreadyAdded ? Palette.textMuted : Palette.textBright)
                         Spacer()
                         if alreadyAdded {
-                            Text("Ekli").font(.caption).foregroundStyle(Palette.textMuted)
+                            Text(L("Added", "Ekli")).font(.caption).foregroundStyle(Palette.textMuted)
                         } else if picked.contains(name) {
                             Image(systemName: "checkmark").foregroundStyle(Palette.blue)
                         }
@@ -194,17 +194,17 @@ private struct ModelPickerSheet: View {
                 .disabled(alreadyAdded)
                 .listRowBackground(Palette.surface)
             }
-            .searchable(text: $search, prompt: "Model ara")
+            .searchable(text: $search, prompt: L("Search models", "Model ara"))
             .scrollContentBackground(.hidden)
             .background(Palette.background)
-            .navigationTitle("Modeller")
+            .navigationTitle(L("Models", "Modeller"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Vazgeç") { dismiss() }
+                    Button(L("Cancel", "Vazgeç")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Ekle (\(picked.count))") {
+                    Button(L("Add (\(picked.count))", "Ekle (\(picked.count))")) {
                         add(available.filter(picked.contains))
                         dismiss()
                     }

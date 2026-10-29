@@ -32,7 +32,7 @@ struct NotesView: View {
                 }
             } footer: {
                 if !notes.isEmpty {
-                    Text("Bu notlar her sohbette asistana iletilir. Silmek için sola kaydır.")
+                    Text(L("These notes are shared with the assistant in every chat. Swipe left to delete.", "Bu notlar her sohbette asistana iletilir. Silmek için sola kaydır."))
                         .foregroundStyle(Palette.textMuted)
                 }
             }
@@ -42,14 +42,14 @@ struct NotesView: View {
         .overlay {
             if notes.isEmpty {
                 ContentUnavailableView(
-                    "Hafıza boş",
+                    L("Memory is empty", "Hafıza boş"),
                     systemImage: "brain",
-                    description: Text("Asistana kendinden veya tercihlerinden bahsettiğinde burada not olarak görünür.")
+                    description: Text(L("When you tell the assistant about yourself or your preferences, it shows up here as a note.", "Asistana kendinden veya tercihlerinden bahsettiğinde burada not olarak görünür."))
                 )
                 .foregroundStyle(Palette.textMuted)
             }
         }
-        .navigationTitle("Hafıza")
+        .navigationTitle(L("Memory", "Hafıza"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -60,7 +60,7 @@ struct NotesView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("Not ekle")
+                .accessibilityLabel(L("Add Note", "Not ekle"))
             }
         }
         .sheet(item: $editing) { note in
@@ -91,23 +91,23 @@ private struct NoteEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Not", text: $text, prompt: Text("Örn. Kahveyi şekersiz içerim.").foregroundStyle(Palette.textMuted), axis: .vertical)
+                TextField(L("Note", "Not"), text: $text, prompt: Text(L("E.g. I take my coffee without sugar.", "Örn. Kahveyi şekersiz içerim.")).foregroundStyle(Palette.textMuted), axis: .vertical)
                     .lineLimit(3...12)
                     .foregroundStyle(Palette.textBright)
                     .listRowBackground(Palette.surface)
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background)
-            .navigationTitle(initialText.isEmpty ? "Yeni not" : "Notu düzenle")
+            .navigationTitle(initialText.isEmpty ? L("New Note", "Yeni not") : L("Edit Note", "Notu düzenle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Vazgeç") { dismiss() }
+                    Button(L("Cancel", "Vazgeç")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Kaydet") {
+                    Button(L("Save", "Kaydet")) {
                         save(trimmed)
                         dismiss()
                     }

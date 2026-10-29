@@ -15,23 +15,23 @@ extension LLMError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            return "Base URL geçersiz. https:// ile başlayan tam adresi gir (örn. https://router.example.com/v1)."
+            return "Invalid base URL. Enter the full address starting with https:// (e.g. https://router.example.com/v1)."
         case .missingAPIKey:
-            return "API key girilmemiş."
+            return "No API key entered."
         case .missingModel:
-            return "Model adı girilmemiş."
+            return "No model name entered."
         case .http(401, _), .http(403, _):
-            return "API key geçersiz veya bu modele erişim yetkin yok. Ayarları kontrol et."
+            return "The API key is invalid or has no access to this model. Check your settings."
         case .http(404, _):
-            return "Endpoint veya model bulunamadı. Base URL'i ve model adını kontrol et."
+            return "Endpoint or model not found. Check the base URL and model name."
         case .http(429, _):
-            return "İstek sınırı aşıldı. Biraz bekleyip tekrar dene."
+            return "Rate limit reached. Wait a moment and try again."
         case let .http(status, message):
-            return "Sunucu hatası (\(status))" + (message.map { ": \($0)" } ?? ".")
+            return "Server error (\(status))" + (message.map { ": \($0)" } ?? ".")
         case let .server(message):
-            return "Sunucu hatası: \(message)"
+            return "Server error: \(message)"
         case .invalidResponse:
-            return "Sunucudan beklenmeyen bir yanıt geldi."
+            return "The server sent an unexpected response."
         }
     }
 }

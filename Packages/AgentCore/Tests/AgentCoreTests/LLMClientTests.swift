@@ -99,7 +99,7 @@ import Testing
     let error = await streamError(client)
 
     #expect(error == .http(status: 401, message: "Incorrect API key provided: ***"))
-    #expect(error?.errorDescription?.contains("API key geçersiz") == true)
+    #expect(error?.errorDescription?.contains("API key is invalid") == true)
     #expect(error?.errorDescription?.contains("sk-test-123") == false)
 }
 
@@ -109,7 +109,7 @@ import Testing
     let error = await streamError(client)
 
     #expect(error == .http(status: 502, message: "Bad Gateway"))
-    #expect(error?.errorDescription == "Sunucu hatası (502): Bad Gateway")
+    #expect(error?.errorDescription == "Server error (502): Bad Gateway")
 }
 
 @Test func errorInsideStreamIsReported() async throws {

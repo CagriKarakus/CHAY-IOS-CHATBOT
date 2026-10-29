@@ -44,14 +44,14 @@ struct ConversationsView: View {
         .overlay {
             if conversations.isEmpty {
                 ContentUnavailableView(
-                    "Henüz sohbet yok",
+                    L("No chats yet", "Henüz sohbet yok"),
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Gönderdiğin her sohbet burada saklanır.")
+                    description: Text(L("Every chat you send is saved here.", "Gönderdiğin her sohbet burada saklanır."))
                 )
                 .foregroundStyle(Palette.textMuted)
             }
         }
-        .navigationTitle("Sohbetler")
+        .navigationTitle(L("Chats", "Sohbetler"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)

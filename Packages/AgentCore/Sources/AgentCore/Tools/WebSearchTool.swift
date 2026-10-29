@@ -23,16 +23,16 @@ public struct WebSearchTool: Tool {
     }
 
     public let name = "web_search"
-    public let description = "Web'de arama yapar ve en alakalı sonuçların başlık, URL ve özetlerini döndürür. Güncel bilgi gerektiğinde kullan."
+    public let description = "Searches the web and returns the title, URL and snippet of the most relevant results. Use it when current information is needed."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
-            "query": ["type": "string", "description": "Arama sorgusu"],
+            "query": ["type": "string", "description": "Search query"],
             "max_results": [
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 10,
-                "description": "Kaç sonuç dönsün. Tek bir olgu (hava durumu, kur, skor, tarih) için 1-2; normal sorular için 3; karşılaştırma veya kapsamlı araştırma için 5-10.",
+                "description": "How many results to return. 1-2 for a single fact (weather, exchange rate, score, date); 3 for normal questions; 5-10 for comparisons or in-depth research.",
             ],
         ],
         "required": ["query"],
@@ -52,8 +52,8 @@ public struct WebSearchTool: Tool {
         self.defaultMaxResults = defaultMaxResults
     }
 
-    public func activity(for arguments: String) -> String? {
-        (try? decodeArguments(Arguments.self, from: arguments)).map { "Aranıyor: \($0.query)" }
+    public func activityDetail(for arguments: String) -> String? {
+        (try? decodeArguments(Arguments.self, from: arguments))?.query
     }
 
     public func run(arguments: String) async throws -> ToolOutput {
@@ -73,7 +73,7 @@ public struct WebSearchTool: Tool {
 
         let results = try JSONDecoder().decode(TavilyResponse.self, from: response.body).results
         guard !results.isEmpty else {
-            return ToolOutput(content: "'\(query)' için sonuç bulunamadı.")
+            return ToolOutput(content: "No results found for '\(query)'.")
         }
 
         let listing = results.enumerated().map { index, result in

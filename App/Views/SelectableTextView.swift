@@ -17,13 +17,13 @@ struct SelectableTextSheet: View {
             SelectableTextView(text: item.text)
                 .ignoresSafeArea(edges: .bottom)
                 .background(Palette.background)
-                .navigationTitle("Metni seç")
+                .navigationTitle(L("Select Text", "Metni seç"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(Palette.background, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Bitti") { dismiss() }
+                        Button(L("Done", "Bitti")) { dismiss() }
                     }
                 }
         }

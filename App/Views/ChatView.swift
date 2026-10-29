@@ -28,7 +28,7 @@ struct ChatView: View {
                             .foregroundStyle(Palette.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if viewModel.canRetry {
-                            Button("Tekrar dene") { viewModel.retry(using: settings) }
+                            Button(L("Try Again", "Tekrar dene")) { viewModel.retry(using: settings) }
                                 .fontWeight(.semibold)
                                 .foregroundStyle(Palette.blue)
                         }
@@ -40,22 +40,22 @@ struct ChatView: View {
                 composer
             }
             .background(Palette.background)
-            .navigationTitle("AI Asistan")
+            .navigationTitle(L("AI Assistant", "AI Asistan"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Button("Sohbetler", systemImage: "bubble.left.and.bubble.right") { path.append(.conversations) }
-                        Button("Dokümanlar", systemImage: "folder") { path.append(.documents) }
-                        Button("Hafıza", systemImage: "brain") { path.append(.notes) }
-                        Button("Ayarlar", systemImage: "slider.horizontal.3") { showingSettings = true }
+                        Button(L("Chats", "Sohbetler"), systemImage: "bubble.left.and.bubble.right") { path.append(.conversations) }
+                        Button(L("Documents", "Dokümanlar"), systemImage: "folder") { path.append(.documents) }
+                        Button(L("Memory", "Hafıza"), systemImage: "brain") { path.append(.notes) }
+                        Button(L("Settings", "Ayarlar"), systemImage: "slider.horizontal.3") { showingSettings = true }
                     } label: {
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(Palette.text)
                     }
-                    .accessibilityLabel("Menü")
+                    .accessibilityLabel(L("Menu", "Menü"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -66,7 +66,7 @@ struct ChatView: View {
                             .foregroundStyle(viewModel.isStreaming ? Palette.textMuted : Palette.text)
                     }
                     .disabled(viewModel.isStreaming)
-                    .accessibilityLabel("Yeni sohbet")
+                    .accessibilityLabel(L("New chat", "Yeni sohbet"))
                 }
             }
             .navigationDestination(for: Route.self) { route in
@@ -85,17 +85,20 @@ struct ChatView: View {
                 }
             }
             .alert(
-                "Hafızaya kaydedilsin mi?",
+                L("Save to memory?", "Hafızaya kaydedilsin mi?"),
                 isPresented: Binding(
                     get: { viewModel.pendingApproval != nil },
                     set: { if !$0 { viewModel.resolveApproval(false) } }
                 ),
                 presenting: viewModel.pendingApproval
             ) { _ in
-                Button("Reddet", role: .cancel) { viewModel.resolveApproval(false) }
-                Button("Kaydet") { viewModel.resolveApproval(true) }
+                Button(L("Decline", "Reddet"), role: .cancel) { viewModel.resolveApproval(false) }
+                Button(L("Save", "Kaydet")) { viewModel.resolveApproval(true) }
             } message: { pending in
-                Text("Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.activity)")
+                Text(L(
+                    "The assistant read web content in this chat and wants to save:\n\n\(pending.request.detail ?? "")",
+                    "Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.detail ?? "")"
+                ))
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
@@ -108,7 +111,7 @@ struct ChatView: View {
                     DocumentView(document: document)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Kapat") { openedDocument = nil }
+                                Button(L("Close", "Kapat")) { openedDocument = nil }
                             }
                         }
                 }
@@ -169,14 +172,14 @@ struct ChatView: View {
                 .font(.system(size: 36))
                 .foregroundStyle(Palette.purple)
             if settings.isConfigured {
-                Text("Bugün neye bakalım?")
+                Text(L("What shall we look into today?", "Bugün neye bakalım?"))
                     .font(.title2.weight(.medium))
                     .foregroundStyle(Palette.textBright)
             } else {
-                Text("Başlamak için API bilgilerini gir")
+                Text(L("Enter your API details to get started", "Başlamak için API bilgilerini gir"))
                     .font(.title3.weight(.medium))
                     .foregroundStyle(Palette.textBright)
-                Button("Ayarları aç") { showingSettings = true }
+                Button(L("Open Settings", "Ayarları aç")) { showingSettings = true }
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.blue)
             }
@@ -189,7 +192,7 @@ struct ChatView: View {
     /// Claude tarzı yuvarlak giriş kutusu.
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Bir şey sor…", text: $viewModel.input, prompt: Text("Bir şey sor…").foregroundStyle(Palette.textMuted), axis: .vertical)
+            TextField(L("Ask anything…", "Bir şey sor…"), text: $viewModel.input, prompt: Text(L("Ask anything…", "Bir şey sor…")).foregroundStyle(Palette.textMuted), axis: .vertical)
                 .lineLimit(1...6)
                 .focused($inputFocused)
                 .foregroundStyle(Palette.textBright)
@@ -208,7 +211,7 @@ struct ChatView: View {
                             .frame(width: 32, height: 32)
                             .background(Palette.textBright, in: .circle)
                     }
-                    .accessibilityLabel("Durdur")
+                    .accessibilityLabel(L("Stop", "Durdur"))
                 } else {
                     Button {
                         inputFocused = false
@@ -221,7 +224,7 @@ struct ChatView: View {
                             .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
                     }
                     .disabled(!viewModel.canSend)
-                    .accessibilityLabel("Gönder")
+                    .accessibilityLabel(L("Send", "Gönder"))
                 }
             }
         }
@@ -248,7 +251,7 @@ private struct UserMessage: View {
                 .padding(.vertical, 10)
                 .background(Palette.elevated, in: .rect(cornerRadius: 18))
                 .contextMenu {
-                    Button("Kopyala", systemImage: "doc.on.doc") {
+                    Button(L("Copy", "Kopyala"), systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = text
                     }
                 }
@@ -275,10 +278,10 @@ private struct AssistantMessage: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .contextMenu {
-                        Button("Kopyala", systemImage: "doc.on.doc") {
+                        Button(L("Copy", "Kopyala"), systemImage: "doc.on.doc") {
                             UIPasteboard.general.string = plainText(fromMarkdown: item.text)
                         }
-                        Button("Metni seç", systemImage: "selection.pin.in.out") {
+                        Button(L("Select Text", "Metni seç"), systemImage: "selection.pin.in.out") {
                             selectText(plainText(fromMarkdown: item.text))
                         }
                     }
@@ -323,7 +326,7 @@ private struct FileCard: View {
                     Text(document.name)
                         .lineLimit(1)
                         .foregroundStyle(Palette.textBright)
-                    Text("Markdown · dokun ve aç")
+                    Text(L("Markdown · tap to open", "Markdown · dokun ve aç"))
                         .font(.caption)
                         .foregroundStyle(Palette.textMuted)
                 }

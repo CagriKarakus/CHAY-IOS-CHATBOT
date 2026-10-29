@@ -42,16 +42,17 @@ struct ToolLog: View {
     private var summary: String {
         let counts = Dictionary(grouping: activities, by: \.toolName).mapValues(\.count)
         let parts: [String] = [
-            counts["web_search"].map { "\($0) arama" },
-            counts["fetch_page"].map { "\($0) sayfa" },
-            counts["write_file"].map { "\($0) dosya" },
-            counts["save_note"].map { "\($0) not" },
-            counts["read_notes"].map { _ in "notlar okundu" },
-            counts["compact"].map { _ in "bağlam özetlendi" },
+            counts["web_search"].map { L($0 == 1 ? "1 search" : "\($0) searches", "\($0) arama") },
+            counts["fetch_page"].map { L($0 == 1 ? "1 page" : "\($0) pages", "\($0) sayfa") },
+            counts["write_file"].map { L($0 == 1 ? "1 file" : "\($0) files", "\($0) dosya") },
+            counts["save_note"].map { L($0 == 1 ? "1 note" : "\($0) notes", "\($0) not") },
+            counts["read_notes"].map { _ in L("notes read", "notlar okundu") },
+            counts["compact"].map { _ in L("context summarized", "bağlam özetlendi") },
         ].compactMap { $0 }
         let failed = activities.filter { $0.state == .failed }.count
-        let text = parts.isEmpty ? "\(activities.count) adım" : parts.joined(separator: " · ")
-        return failed > 0 ? "\(text) · \(failed) başarısız" : text
+        let steps = activities.count
+        let text = parts.isEmpty ? L(steps == 1 ? "1 step" : "\(steps) steps", "\(steps) adım") : parts.joined(separator: " · ")
+        return failed > 0 ? L("\(text) · \(failed) failed", "\(text) · \(failed) başarısız") : text
     }
 }
 
@@ -104,12 +105,12 @@ struct MessageFooter: View {
     var body: some View {
         HStack(spacing: 10) {
             if stopped {
-                Label("Durduruldu", systemImage: "stop.circle")
+                Label(L("Stopped", "Durduruldu"), systemImage: "stop.circle")
             }
             if let usage {
                 Label("\(usage.promptTokens.formatted(.number.notation(.compactName))) → \(usage.completionTokens.formatted(.number.notation(.compactName))) token", systemImage: "number")
                 if let speed = usage.tokensPerSecond {
-                    Label("\(speed.formatted(.number.precision(.fractionLength(0)))) tok/sn", systemImage: "speedometer")
+                    Label(L("\(speed.formatted(.number.precision(.fractionLength(0)))) tok/s", "\(speed.formatted(.number.precision(.fractionLength(0)))) tok/sn"), systemImage: "speedometer")
                 }
             }
         }

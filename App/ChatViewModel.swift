@@ -138,7 +138,7 @@ final class ChatViewModel {
         do {
             _ = try settings.configuration()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingMessage(for: error)
             return
         }
 
@@ -161,7 +161,7 @@ final class ChatViewModel {
         do {
             configuration = try settings.configuration()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingMessage(for: error)
             return
         }
         guard let context, let selected = settings.selected else { return }
@@ -238,7 +238,7 @@ final class ChatViewModel {
         guard !older.isEmpty, let index = items.firstIndex(where: { $0.id == replyID }) else { return }
 
         let activityID = "compact-\(UUID().uuidString)"
-        items[index].activities.append(ToolActivity(id: activityID, toolName: "compact", title: "Önceki mesajlar özetleniyor"))
+        items[index].activities.append(ToolActivity(id: activityID, toolName: "compact", title: L("Summarizing earlier messages", "Önceki mesajlar özetleniyor")))
         summary = try await ContextCompactor.summarize(older, previousSummary: summary, client: client)
         history = recent
         if let index = items.firstIndex(where: { $0.id == replyID }),
@@ -267,12 +267,12 @@ final class ChatViewModel {
         case let .text(delta):
             items[index].text += delta
             pendingStepText += delta
-        case let .toolStarted(callID, name, activity):
+        case let .toolStarted(callID, name, detail):
             // Araçtan önce yazılmış metinle sonraki cevap birbirine yapışmasın.
             if !items[index].text.isEmpty, !items[index].text.hasSuffix("\n\n") {
                 items[index].text += "\n\n"
             }
-            items[index].activities.append(ToolActivity(id: callID, toolName: name, title: activity))
+            items[index].activities.append(ToolActivity(id: callID, toolName: name, title: activityTitle(toolName: name, detail: detail)))
         case let .toolFinished(callID, sources, files, failed):
             if let activity = items[index].activities.firstIndex(where: { $0.id == callID }) {
                 items[index].activities[activity].state = failed ? .failed : .done

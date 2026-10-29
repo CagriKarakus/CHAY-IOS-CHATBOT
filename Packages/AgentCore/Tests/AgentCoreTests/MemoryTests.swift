@@ -42,9 +42,9 @@ final class ApprovalRecorder: @unchecked Sendable {
 
     let output = try await tool.run(arguments: #"{"content":"  Kullanıcı emoji sevmiyor. "}"#)
 
-    #expect(output.content == "Hafızaya kaydedildi: Kullanıcı emoji sevmiyor.")
+    #expect(output.content == "Saved to memory: Kullanıcı emoji sevmiyor.")
     #expect(await store.notes.map(\.content) == ["Kullanıcı emoji sevmiyor."])
-    #expect(tool.activity(for: #"{"content":"Not"}"#) == "Hafızaya kaydediliyor: Not")
+    #expect(tool.activityDetail(for: #"{"content":"Not"}"#) == "Not")
     #expect(tool.requiresApprovalAfterUntrustedContent)
 }
 
@@ -54,7 +54,7 @@ final class ApprovalRecorder: @unchecked Sendable {
 
     let output = try await tool.run(arguments: #"{"content":"kullanıcının adı çağrı."}"#)
 
-    #expect(output.content == "Bu not zaten kayıtlı.")
+    #expect(output.content == "This note is already saved.")
     #expect(await store.notes.count == 1)
 }
 
@@ -71,7 +71,7 @@ final class ApprovalRecorder: @unchecked Sendable {
 }
 
 @Test func readNotesListsNotes() async throws {
-    #expect(try await ReadNotesTool(store: InMemoryNoteStore()).run(arguments: "").content == "Henüz kayıtlı not yok.")
+    #expect(try await ReadNotesTool(store: InMemoryNoteStore()).run(arguments: "").content == "No notes saved yet.")
 
     let output = try await ReadNotesTool(store: InMemoryNoteStore(["A", "B"])).run(arguments: "{}")
 
@@ -111,7 +111,7 @@ private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, sto
 
     _ = try await saveNoteRun(history: [ChatMessage(role: .user, content: "Ara"), webResult], approver: approver, store: store)
 
-    #expect(approver.requests == [ApprovalRequest(toolName: "save_note", activity: "Hafızaya kaydediliyor: Kullanıcı kedi seviyor.")])
+    #expect(approver.requests == [ApprovalRequest(toolName: "save_note", detail: "Kullanıcı kedi seviyor.")])
     #expect(await store.notes.count == 1)
 }
 
@@ -124,7 +124,7 @@ private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, sto
     #expect(approver.requests.count == 1)
     #expect(await store.notes.isEmpty)
     #expect(events.contains(.toolFinished(id: "n1", sources: [], files: [], failed: true)))
-    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Kullanıcı bu işlemi onaylamadı; tekrar deneme.", toolCallID: "n1"))))
+    #expect(events.contains(.message(ChatMessage(role: .tool, content: "The user declined this action; do not retry it.", toolCallID: "n1"))))
 }
 
 @Test func plainToolsNeverAskApproval() async throws {
@@ -149,6 +149,6 @@ private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, sto
 
     let prompt = SystemPrompt.make(notes: notes, userInstructions: "Kısa yaz.")
 
-    #expect(prompt.contains("hafızandaki notlar (cevaplarında bunları dikkate al):\n- Kullanıcının adı Çağrı.\n- Emoji sevmiyor.\n\nKullanıcının kişisel talimatları"))
+    #expect(prompt.contains("Notes about the user from your memory (take them into account):\n- Kullanıcının adı Çağrı.\n- Emoji sevmiyor.\n\nThe user's personal instructions"))
     #expect(prompt.hasSuffix("Kısa yaz."))
 }

@@ -7,6 +7,9 @@ struct SettingsView: View {
 
     @State private var tavilyKey = ""
     @State private var userInstructions = ""
+    @State private var language = AppLanguage.stored
+    /// Ekran açıldığındaki seçim; değişirse yeniden başlatma uyarısı gösterilir.
+    @State private var initialLanguage = AppLanguage.stored
 
     var body: some View {
         NavigationStack {
@@ -19,7 +22,10 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(provider.name)
                                     .foregroundStyle(Palette.textBright)
-                                Text("\(URL(string: provider.baseURL)?.host ?? provider.baseURL) · \(provider.models.count) model")
+                                Text(verbatim: "\(URL(string: provider.baseURL)?.host ?? provider.baseURL) · " + L(
+                                    provider.models.count == 1 ? "1 model" : "\(provider.models.count) models",
+                                    "\(provider.models.count) model"
+                                ))
                                     .font(.caption)
                                     .foregroundStyle(Palette.textMuted)
                             }
@@ -28,13 +34,13 @@ struct SettingsView: View {
                     NavigationLink {
                         ProviderEditorView(provider: nil)
                     } label: {
-                        Label("Sağlayıcı ekle", systemImage: "plus")
+                        Label(L("Add Provider", "Sağlayıcı ekle"), systemImage: "plus")
                             .foregroundStyle(Palette.blue)
                     }
                 } header: {
-                    header("Modeller ve sağlayıcılar")
+                    header(L("Models and providers", "Modeller ve sağlayıcılar"))
                 } footer: {
-                    footer("Her sağlayıcı bir OpenAI-uyumlu adres ve API key'dir; altına istediğin kadar model ekleyebilirsin. Model sohbet ekranından seçilir.")
+                    footer(L("Each provider is an OpenAI-compatible address and API key; add as many models under it as you like. The model is chosen in the chat screen.", "Her sağlayıcı bir OpenAI-uyumlu adres ve API key'dir; altına istediğin kadar model ekleyebilirsin. Model sohbet ekranından seçilir."))
                 }
                 .listRowBackground(Palette.surface)
 
@@ -42,20 +48,37 @@ struct SettingsView: View {
                     NavigationLink {
                         UsageView()
                     } label: {
-                        Label("Token ve arama kullanımı", systemImage: "chart.bar")
+                        Label(L("Token and search usage", "Token ve arama kullanımı"), systemImage: "chart.bar")
                             .foregroundStyle(Palette.textBright)
                     }
                 }
                 .listRowBackground(Palette.surface)
 
                 Section {
-                    TextField("Kişisel talimatlar", text: $userInstructions, prompt: prompt("Örn. Emoji kullanma. Kısa cevap ver."), axis: .vertical)
+                    Picker(L("Language", "Dil"), selection: $language) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.title).tag(language)
+                        }
+                    }
+                    .foregroundStyle(Palette.textBright)
+                    .onChange(of: language) { AppLanguage.store(language) }
+                } header: {
+                    header(L("Language", "Dil"))
+                } footer: {
+                    footer(language != initialLanguage
+                        ? L("Close and reopen the app to apply the new language.", "Yeni dilin uygulanması için uygulamayı kapatıp yeniden aç.")
+                        : L("System follows your iPhone's language.", "Sistem, iPhone'unun dilini kullanır."))
+                }
+                .listRowBackground(Palette.surface)
+
+                Section {
+                    TextField(L("Personal instructions", "Kişisel talimatlar"), text: $userInstructions, prompt: prompt(L("E.g. Don't use emoji. Keep answers short.", "Örn. Emoji kullanma. Kısa cevap ver.")), axis: .vertical)
                         .lineLimit(3...10)
                         .foregroundStyle(Palette.textBright)
                 } header: {
-                    header("Kişisel talimatlar")
+                    header(L("Personal instructions", "Kişisel talimatlar"))
                 } footer: {
-                    footer("Her sohbette asistana iletilir.")
+                    footer(L("Shared with the assistant in every chat.", "Her sohbette asistana iletilir."))
                 }
                 .listRowBackground(Palette.surface)
 
@@ -65,22 +88,22 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    header("Web araması")
+                    header(L("Web search", "Web araması"))
                 } footer: {
-                    footer("tavily.com'dan ücretsiz alınır. Boş bırakılırsa asistan web'de arama yapamaz.")
+                    footer(L("Free at tavily.com. If left empty, the assistant can't search the web.", "tavily.com'dan ücretsiz alınır. Boş bırakılırsa asistan web'de arama yapamaz."))
                 }
                 .listRowBackground(Palette.surface)
             }
             .scrollContentBackground(.hidden)
             .background(Palette.background)
             .tint(Palette.blue)
-            .navigationTitle("Ayarlar")
+            .navigationTitle(L("Settings", "Ayarlar"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Bitti") {
+                    Button(L("Done", "Bitti")) {
                         settings.saveGeneral(tavilyKey: tavilyKey, userInstructions: userInstructions)
                         dismiss()
                     }
