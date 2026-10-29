@@ -92,9 +92,11 @@ final class ContinuedTurn {
     func advance(_ subtitle: String? = nil) {
         guard subtitle != nil || Date.now.timeIntervalSince(lastUpdate) > 1 else { return }
         lastUpdate = .now
-        // Toplam iş bilinmediği için ilerleme %95'e kadar yavaşça artar.
-        completed = min(completed + max((95 - completed) / 10, 1), 95)
+        // Toplam iş bilinmediği için her adımda bir birim ilerler; toplam da büyüyerek oran %95'i geçmez.
+        // Sayı hiç durmasın: iOS ilerlemesi değişmeyen görevi takılmış sayabilir.
+        completed += 1
         guard #available(iOS 26, *), let continued = task as? BGContinuedProcessingTask else { return }
+        continued.progress.totalUnitCount = max(100, completed * 100 / 95 + 1)
         continued.progress.completedUnitCount = completed
         if let subtitle {
             continued.updateTitle(continued.title, subtitle: subtitle)
@@ -105,7 +107,7 @@ final class ContinuedTurn {
         guard result == nil else { return }
         result = success
         if #available(iOS 26, *), let continued = task as? BGContinuedProcessingTask {
-            continued.progress.completedUnitCount = 100
+            continued.progress.completedUnitCount = continued.progress.totalUnitCount
         }
         task?.setTaskCompleted(success: success)
         task = nil
