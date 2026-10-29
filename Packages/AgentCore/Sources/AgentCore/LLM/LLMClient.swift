@@ -34,8 +34,8 @@ public struct LLMClient: Sendable {
         }
     }
 
-    /// Endpoint'in sunduğu model adlarını (`GET /models`) alfabetik döndürür.
-    public static func listModels(baseURL: String, apiKey: String, transport: any HTTPTransport) async throws -> [String] {
+    /// Endpoint'in sunduğu modelleri (`GET /models`) ada göre sıralı döndürür; sunucu bildirirse yetenekleriyle.
+    public static func listModels(baseURL: String, apiKey: String, transport: any HTTPTransport) async throws -> [ModelInfo] {
         let url = try LLMConfiguration.validatedBaseURL(baseURL)
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw LLMError.missingAPIKey }
@@ -52,14 +52,14 @@ public struct LLMClient: Sendable {
         guard let list = try? JSONDecoder().decode(ModelList.self, from: response.body) else {
             throw LLMError.invalidResponse
         }
-        return list.data.map(\.id).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return list.data.map(ModelInfo.init).sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
     }
 
     func makeRequest(_ messages: [ChatMessage], tools: [ToolDefinition] = []) throws -> HTTPRequest {
         let body = try JSONEncoder().encode(
             ChatCompletionRequest(
                 model: configuration.model,
-                messages: messages,
+                messages: messages.map(WireMessage.init),
                 stream: true,
                 tools: tools.isEmpty ? nil : tools,
                 reasoningEffort: configuration.reasoningEffort

@@ -9,6 +9,8 @@
 - OpenAI-uyumlu herhangi bir `/chat/completions` endpoint'i ile **streaming sohbet**
 - **Birden fazla sağlayıcı ve model**: birden çok endpoint (base URL + key) ve her birinde istediğin kadar model; model listesini sunucudan getirme, modeli sohbet ekranından değiştirme
 - `reasoning_effort` destekleyen modellerde **efor seviyesi** (düşük / orta / yüksek)
+- **Görsel ve ses**: destekleyen modellerde fotoğraf veya ses kaydı ekleme; görsel üreten modeller standart `/images/generations` endpoint'ini kullanır. Yetenekler, sunucu bildirirse `/models`'tan okunur (örn. Evren `modalities`, OpenRouter `architecture`) ve elle ayarlanabilir
+- Her cevabı telefonun kendi sesiyle **sesli okuma**
 - [Tavily](https://tavily.com) ile **web araştırması**: kaç arama ve kaç sonuç gerektiğine model karar verir, sayfaları okur ve kaynak gösterir
 - **Markdown doküman**: asistan Dosyalar uygulamasında görünen `.md` dosyaları yazar; uygulama içinde görüntüleme ve paylaşma
 - **Hafıza**: kalıcı bilgiler ve tercihler not olarak saklanır ve her sohbete eklenir; notlar düzenlenip silinebilir
@@ -75,6 +77,5 @@ powershell -ExecutionPolicy Bypass -File scripts\faz0.ps1 -Model "<model>"
 
 ## Yol haritası
 
-- Destekleyen modellerde görsel ve ses girdisi, sesli cevap ve görsel üretme
 - Share Extension, Face ID kilidi, PDF girdisi, sesli giriş
 - Siri / Kestirmeler, uzak MCP sunucuları, cihaz üstü model, iCloud senkronizasyonu

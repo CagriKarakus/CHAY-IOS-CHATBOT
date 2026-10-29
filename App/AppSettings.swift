@@ -17,6 +17,17 @@ struct ModelProfile: Codable, Identifiable, Hashable {
     var supportsEffort = false
     /// `nil` = modelin varsayılanı.
     var effort: ReasoningEffort?
+    // Yetenekler; `nil` = bilinmiyor (kapalı sayılır). Opsiyonel olmaları eski kayıtların açılabilmesi için.
+    var acceptsImages: Bool?
+    var acceptsAudio: Bool?
+    var generatesImages: Bool?
+
+    /// Sunucunun bildirdiği yetenekleri uygular. `overwrite: false` ise sadece henüz ayarlanmamış olanları doldurur.
+    mutating func apply(_ info: ModelInfo, overwrite: Bool = true) {
+        if let value = info.acceptsImages, overwrite || acceptsImages == nil { acceptsImages = value }
+        if let value = info.acceptsAudio, overwrite || acceptsAudio == nil { acceptsAudio = value }
+        if let value = info.generatesImages, overwrite || generatesImages == nil { generatesImages = value }
+    }
 }
 
 /// Sağlayıcılar, seçili model ve genel ayarlar. Gizli olmayanlar UserDefaults'ta, API key'ler Keychain'de.

@@ -9,6 +9,8 @@ A native iOS assistant that runs on **your own LLM API key**. It can research th
 - **Streaming chat** with any OpenAI-compatible `/chat/completions` endpoint
 - **Multiple providers and models**: add several endpoints (base URL + key) with any number of models each, fetch the model list from the server, and switch models from the chat screen
 - **Reasoning effort** (low / medium / high) for models that support `reasoning_effort`
+- **Images and audio**: attach photos or voice recordings for models that accept them; image-generation models use the standard `/images/generations` endpoint. Capabilities are read from `/models` when the server reports them (e.g. Evren `modalities`, OpenRouter `architecture`) and can be set by hand
+- **Read aloud** any reply with the phone's built-in voices
 - **Web research** with [Tavily](https://tavily.com): the model decides how many searches and results a question needs, reads pages and cites sources
 - **Markdown documents**: the assistant writes `.md` files that show up in the Files app; view and share them in the app
 - **Memory**: lasting facts and preferences are saved as notes and shared with every chat; notes can be edited or deleted
@@ -75,6 +77,5 @@ powershell -ExecutionPolicy Bypass -File scripts\faz0.ps1 -Model "<model>"
 
 ## Roadmap
 
-- Image and audio input, spoken replies and image generation for models that support them
 - Share Extension, Face ID lock, PDF input, voice input
 - Siri / Shortcuts, remote MCP servers, on-device models, iCloud sync

@@ -53,7 +53,8 @@ final class SendRecorder: HTTPTransport, @unchecked Sendable {
 
     let models = try await LLMClient.listModels(baseURL: "https://router.example.com/v1/", apiKey: " key ", transport: transport)
 
-    #expect(models == ["claude-x", "gpt-5", "zai/glm-5.3"])
+    #expect(models.map(\.id) == ["claude-x", "gpt-5", "zai/glm-5.3"])
+    #expect(models.allSatisfy { $0.acceptsImages == nil && $0.generatesImages == nil })
     #expect(transport.requests.first?.url.absoluteString == "https://router.example.com/v1/models")
     #expect(transport.requests.first?.method == "GET")
     #expect(transport.requests.first?.headers["Authorization"] == "Bearer key")

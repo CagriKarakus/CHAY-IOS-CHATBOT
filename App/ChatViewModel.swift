@@ -22,6 +22,25 @@ struct ChatItem: Identifiable, Codable {
     var usage: TokenUsage?
     /// Kullanıcı durdurduysa `true`.
     var stopped: Bool?
+    /// Kullanıcı mesajındaki eklerin önizlemesi (tam veri `history`'de).
+    var attachments: [AttachmentPreview]?
+    /// Üretilen görsellerin Documents'taki dosya adları.
+    var images: [String]?
+}
+
+struct AttachmentPreview: Codable, Hashable {
+    let kind: Attachment.Kind
+    /// Görseller için küçük JPEG.
+    let thumbnail: Data?
+    /// Ses kayıtları için süre (saniye).
+    let duration: Double?
+}
+
+/// Gönderilmeyi bekleyen ek.
+struct PendingAttachment: Identifiable {
+    let id = UUID()
+    let attachment: Attachment
+    let preview: AttachmentPreview
 }
 
 struct ToolActivity: Identifiable, Codable {
@@ -52,6 +71,7 @@ final class ChatViewModel {
     private(set) var items: [ChatItem] = []
     private(set) var isStreaming = false
     private(set) var pendingApproval: PendingApproval?
+    private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
     private(set) var conversationID: UUID?
     var input = ""
@@ -71,7 +91,29 @@ final class ChatViewModel {
     private var currentModel: (providerID: UUID, name: String)?
 
     var canSend: Bool {
-        !isStreaming && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isStreaming && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
+    }
+
+    func addImage(_ data: Data) {
+        guard let prepared = preparedImage(from: data) else {
+            errorMessage = L("Couldn't read the image.", "Görsel okunamadı.")
+            return
+        }
+        pendingAttachments.append(PendingAttachment(
+            attachment: Attachment(kind: .image, mimeType: "image/jpeg", data: prepared.jpeg),
+            preview: AttachmentPreview(kind: .image, thumbnail: prepared.thumbnail, duration: nil)
+        ))
+    }
+
+    func addAudio(_ data: Data, duration: TimeInterval) {
+        pendingAttachments.append(PendingAttachment(
+            attachment: Attachment(kind: .audio, mimeType: "audio/wav", data: data),
+            preview: AttachmentPreview(kind: .audio, thumbnail: nil, duration: duration)
+        ))
+    }
+
+    func removeAttachment(_ id: PendingAttachment.ID) {
+        pendingAttachments.removeAll { $0.id == id }
     }
 
     /// Son istek hata verdiyse ve cevapsız kaldıysa aynı geçmişle tekrar denenebilir.
@@ -142,18 +184,90 @@ final class ChatViewModel {
             return
         }
 
+        // Seçili model ekin türünü desteklemiyorsa gönderme (ör. model sonradan değiştirildiyse).
+        let model = settings.selected?.model
+        if pendingAttachments.contains(where: { $0.attachment.kind == .image }), model?.acceptsImages != true {
+            errorMessage = L("This model doesn't accept images. Choose another model or remove the image.",
+                             "Bu model görsel kabul etmiyor. Başka bir model seç ya da görseli kaldır.")
+            return
+        }
+        if pendingAttachments.contains(where: { $0.attachment.kind == .audio }), model?.acceptsAudio != true {
+            errorMessage = L("This model doesn't accept audio. Choose another model or remove the recording.",
+                             "Bu model ses kabul etmiyor. Başka bir model seç ya da kaydı kaldır.")
+            return
+        }
+
+        let attachments = pendingAttachments
         input = ""
+        pendingAttachments = []
         errorMessage = nil
-        items.append(ChatItem(role: .user, text: text))
-        history.append(ChatMessage(role: .user, content: text))
+        items.append(ChatItem(role: .user, text: text, attachments: attachments.isEmpty ? nil : attachments.map(\.preview)))
+        history.append(ChatMessage(
+            role: .user,
+            content: text,
+            attachments: attachments.isEmpty ? nil : attachments.map(\.attachment)
+        ))
         persist()
-        runTurn(using: settings)
+        if model?.generatesImages == true {
+            generateImage(prompt: text, using: settings)
+        } else {
+            runTurn(using: settings)
+        }
+    }
+
+    /// Görsel üreten modellerde mesaj, sohbet yerine `/images/generations`'a istem olarak gider.
+    private func generateImage(prompt: String, using settings: AppSettings) {
+        let configuration: LLMConfiguration
+        do {
+            configuration = try settings.configuration()
+        } catch {
+            errorMessage = userFacingMessage(for: error)
+            return
+        }
+        var reply = ChatItem(role: .assistant, text: "")
+        reply.activities = [ToolActivity(id: "image-\(reply.id)", toolName: "generate_image", title: L("Generating image", "Görsel üretiliyor"))]
+        items.append(reply)
+        isStreaming = true
+        let generator = ImageGenerator(configuration: configuration, transport: URLSessionTransport())
+        let background = BackgroundActivity(name: "ImageGeneration")
+
+        turnTask = Task {
+            var succeeded = false
+            do {
+                let data = try await generator.generate(prompt: prompt)
+                let name = try saveGeneratedImage(data)
+                if let index = items.firstIndex(where: { $0.id == reply.id }) {
+                    items[index].images = [name]
+                }
+                // Sohbet geçmişi tutarlı kalsın; sonraki mesajlar bir sohbet modeline giderse bağlamı bilsin.
+                history.append(ChatMessage(role: .assistant, content: "[Generated an image: \(name)]"))
+                succeeded = true
+            } catch {
+                if Task.isCancelled || error is CancellationError {
+                    markStopped(reply.id)
+                } else {
+                    errorMessage = userFacingMessage(for: error)
+                }
+            }
+            if let index = items.firstIndex(where: { $0.id == reply.id }),
+               let activity = items[index].activities.indices.first {
+                items[index].activities[activity].state = succeeded ? .done : .failed
+            }
+            isStreaming = false
+            turnTask = nil
+            persist()
+            background.end()
+        }
     }
 
     func retry(using settings: AppSettings) {
         guard canRetry else { return }
         errorMessage = nil
-        runTurn(using: settings)
+        if settings.selected?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
+            generateImage(prompt: prompt, using: settings)
+        } else {
+            runTurn(using: settings)
+        }
     }
 
     private func runTurn(using settings: AppSettings) {

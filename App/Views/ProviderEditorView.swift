@@ -34,13 +34,13 @@ struct ProviderEditorView: View {
 
             Section {
                 ForEach($draft.models) { $model in
-                    Toggle(isOn: $model.supportsEffort) {
-                        VStack(alignment: .leading, spacing: 2) {
+                    NavigationLink {
+                        ModelSettingsView(model: $model)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(model.name)
                                 .foregroundStyle(Palette.textBright)
-                            Text(model.supportsEffort ? L("Effort selectable", "Efor seçilebilir") : L("Effort selection off", "Efor seçimi kapalı"))
-                                .font(.caption)
-                                .foregroundStyle(Palette.textMuted)
+                            CapabilityBadges(model: model)
                         }
                     }
                 }
@@ -68,7 +68,10 @@ struct ProviderEditorView: View {
             } header: {
                 header(L("Models", "Modeller"))
             } footer: {
-                footer(L("If a model supports reasoning_effort, turn on its switch to pick Low/Medium/High in the chat. Swipe left to delete.", "Model reasoning_effort destekliyorsa \"Efor\" anahtarını aç; sohbet ekranında Düşük/Orta/Yüksek seçebilirsin. Silmek için sola kaydır."))
+                footer(L(
+                    "Tap a model to set what it supports (effort, images, audio, image generation). Fetching from the server fills these in when the server reports them. Swipe left to delete.",
+                    "Bir modele dokunarak neleri desteklediğini ayarla (efor, görsel, ses, görsel üretme). Sunucu bildiriyorsa sunucudan getirince bunlar otomatik dolar. Silmek için sola kaydır."
+                ))
             }
             .listRowBackground(Palette.surface)
 
@@ -107,8 +110,13 @@ struct ProviderEditorView: View {
             }
         }
         .sheet(item: $fetchedModels) { fetched in
-            ModelPickerSheet(available: fetched.names, existing: Set(draft.models.map(\.name))) { picked in
-                draft.models += picked.map { ModelProfile(name: $0) }
+            ModelPickerSheet(available: fetched.models.map(\.id), existing: Set(draft.models.map(\.name))) { picked in
+                let infos = Dictionary(fetched.models.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                draft.models += picked.map { name in
+                    var model = ModelProfile(name: name)
+                    if let info = infos[name] { model.apply(info) }
+                    return model
+                }
             }
         }
         .onAppear {
@@ -132,11 +140,17 @@ struct ProviderEditorView: View {
         Task {
             defer { isFetching = false }
             do {
-                let names = try await LLMClient.listModels(baseURL: draft.baseURL, apiKey: apiKey, transport: URLSessionTransport())
-                if names.isEmpty {
+                let models = try await LLMClient.listModels(baseURL: draft.baseURL, apiKey: apiKey, transport: URLSessionTransport())
+                // Zaten ekli modellerin, sunucunun bildirdiği ama henüz ayarlanmamış yeteneklerini doldur.
+                for index in draft.models.indices {
+                    if let info = models.first(where: { $0.id == draft.models[index].name }) {
+                        draft.models[index].apply(info, overwrite: false)
+                    }
+                }
+                if models.isEmpty {
                     errorMessage = L("The server returned no models; you can add model names manually.", "Sunucu model listesi döndürmedi; model adlarını elle ekleyebilirsin.")
                 } else {
-                    fetchedModels = FetchedModels(names: names)
+                    fetchedModels = FetchedModels(models: models)
                 }
             } catch {
                 errorMessage = userFacingMessage(for: error)
@@ -156,7 +170,80 @@ struct ProviderEditorView: View {
 
 private struct FetchedModels: Identifiable {
     let id = UUID()
-    let names: [String]
+    let models: [ModelInfo]
+}
+
+/// Modelin desteklediği özellikler; sunucu bildirmediyse burada elle ayarlanır.
+private struct ModelSettingsView: View {
+    @Binding var model: ModelProfile
+
+    var body: some View {
+        Form {
+            Section {
+                TextField(L("Model name", "Model adı"), text: $model.name)
+                    .foregroundStyle(Palette.textBright)
+            }
+            .listRowBackground(Palette.surface)
+
+            Section {
+                Toggle(L("Reasoning effort", "Düşünme eforu"), isOn: $model.supportsEffort)
+                Toggle(L("Image input", "Görsel girdisi"), isOn: flag(\.acceptsImages))
+                Toggle(L("Audio input", "Ses girdisi"), isOn: flag(\.acceptsAudio))
+                Toggle(L("Generates images", "Görsel üretir"), isOn: flag(\.generatesImages))
+            } header: {
+                header(L("Capabilities", "Yetenekler"))
+            } footer: {
+                footer(L(
+                    "Effort sends reasoning_effort. Image and audio input add attach buttons in the chat. Image generation sends your message to /images/generations instead of chat.",
+                    "Efor, reasoning_effort gönderir. Görsel ve ses girdisi sohbette ekleme butonlarını açar. Görsel üretme, mesajını sohbet yerine /images/generations'a gönderir."
+                ))
+            }
+            .listRowBackground(Palette.surface)
+        }
+        .foregroundStyle(Palette.textBright)
+        .tint(Palette.blue)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
+        .navigationTitle(model.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func flag(_ keyPath: WritableKeyPath<ModelProfile, Bool?>) -> Binding<Bool> {
+        Binding(
+            get: { model[keyPath: keyPath] == true },
+            set: { model[keyPath: keyPath] = $0 }
+        )
+    }
+}
+
+/// Model satırında desteklenen özelliklerin küçük simgeleri.
+private struct CapabilityBadges: View {
+    let model: ModelProfile
+
+    var body: some View {
+        let badges: [(String, String)] = [
+            model.supportsEffort ? ("gauge.with.dots.needle.50percent", L("Effort", "Efor")) : nil,
+            model.acceptsImages == true ? ("photo", L("Image", "Görsel")) : nil,
+            model.acceptsAudio == true ? ("waveform", L("Audio", "Ses")) : nil,
+            model.generatesImages == true ? ("paintbrush", L("Generates images", "Görsel üretir")) : nil,
+        ].compactMap { $0 }
+
+        if badges.isEmpty {
+            Text(L("Text only", "Sadece metin"))
+                .font(.caption)
+                .foregroundStyle(Palette.textMuted)
+        } else {
+            HStack(spacing: 8) {
+                ForEach(badges, id: \.0) { icon, title in
+                    Label(title, systemImage: icon)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Palette.cyan)
+        }
+    }
 }
 
 /// Sunucudan gelen modellerden eklenecekleri seçtirir.

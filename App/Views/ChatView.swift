@@ -1,5 +1,6 @@
 import AgentCore
 import MarkdownUI
+import PhotosUI
 import SwiftData
 import SwiftUI
 
@@ -16,6 +17,9 @@ struct ChatView: View {
     @State private var showingSettings = false
     @State private var openedDocument: DocumentFile?
     @State private var selectingText: SelectableTextItem?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showingPhotoPicker = false
+    @State private var recorder = AudioRecorder()
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -132,7 +136,7 @@ struct ChatView: View {
                     ForEach(viewModel.items) { item in
                         switch item.role {
                         case .user:
-                            UserMessage(text: item.text)
+                            UserMessage(text: item.text, attachments: item.attachments ?? [])
                                 .id(item.id)
                         case .assistant:
                             AssistantMessage(
@@ -192,12 +196,24 @@ struct ChatView: View {
     /// Claude tarzı yuvarlak giriş kutusu.
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(L("Ask anything…", "Bir şey sor…"), text: $viewModel.input, prompt: Text(L("Ask anything…", "Bir şey sor…")).foregroundStyle(Palette.textMuted), axis: .vertical)
-                .lineLimit(1...6)
-                .focused($inputFocused)
-                .foregroundStyle(Palette.textBright)
-                .tint(Palette.blue)
+            if !viewModel.pendingAttachments.isEmpty {
+                PendingAttachmentStrip(attachments: viewModel.pendingAttachments) { viewModel.removeAttachment($0) }
+            }
+            if recorder.isRecording {
+                RecordingBar(elapsed: recorder.elapsed, cancel: recorder.cancel) {
+                    if let recording = recorder.stop() {
+                        viewModel.addAudio(recording.data, duration: recording.duration)
+                    }
+                }
+            } else {
+                TextField(L("Ask anything…", "Bir şey sor…"), text: $viewModel.input, prompt: Text(L("Ask anything…", "Bir şey sor…")).foregroundStyle(Palette.textMuted), axis: .vertical)
+                    .lineLimit(1...6)
+                    .focused($inputFocused)
+                    .foregroundStyle(Palette.textBright)
+                    .tint(Palette.blue)
+            }
             HStack(spacing: 8) {
+                attachMenu
                 ModelMenu()
                 EffortMenu()
                 Spacer()
@@ -236,31 +252,94 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .onTapGesture { inputFocused = true }
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItems, maxSelectionCount: 4, matching: .images)
+        .onChange(of: photoItems) {
+            let items = photoItems
+            photoItems = []
+            Task {
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        viewModel.addImage(data)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sadece seçili model görsel veya ses kabul ediyorsa görünür.
+    @ViewBuilder
+    private var attachMenu: some View {
+        let model = settings.selected?.model
+        if model?.acceptsImages == true || model?.acceptsAudio == true {
+            Menu {
+                if model?.acceptsImages == true {
+                    Button(L("Photo", "Fotoğraf"), systemImage: "photo") { showingPhotoPicker = true }
+                }
+                if model?.acceptsAudio == true {
+                    Button(L("Record Audio", "Ses kaydet"), systemImage: "mic") { startRecording() }
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Palette.text)
+                    .frame(width: 30, height: 30)
+                    .background(Palette.background, in: .circle)
+            }
+            .disabled(viewModel.isStreaming || recorder.isRecording)
+            .accessibilityLabel(L("Attach", "Ekle"))
+        }
+    }
+
+    private func startRecording() {
+        inputFocused = false
+        Task {
+            do {
+                let granted = try await recorder.start()
+                if !granted {
+                    viewModel.errorMessage = L("Microphone access is off. Turn it on in Settings > AI Assistant.",
+                                               "Mikrofon izni kapalı. Ayarlar > AI Assistant'tan açabilirsin.")
+                }
+            } catch {
+                viewModel.errorMessage = userFacingMessage(for: error)
+            }
+        }
     }
 }
 
 private struct UserMessage: View {
     let text: String
+    let attachments: [AttachmentPreview]
 
     var body: some View {
-        HStack {
-            Spacer(minLength: 48)
-            Text(text)
-                .foregroundStyle(Palette.textBright)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Palette.elevated, in: .rect(cornerRadius: 18))
-                .contextMenu {
-                    Button(L("Copy", "Kopyala"), systemImage: "doc.on.doc") {
-                        UIPasteboard.general.string = text
+        VStack(alignment: .trailing, spacing: 6) {
+            if !attachments.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(attachments.enumerated()), id: \.offset) { _, preview in
+                        AttachmentThumbnail(preview: preview, size: 72)
                     }
                 }
+            }
+            if !text.isEmpty {
+                Text(text)
+                    .foregroundStyle(Palette.textBright)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Palette.elevated, in: .rect(cornerRadius: 18))
+                    .contextMenu {
+                        Button(L("Copy", "Kopyala"), systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = text
+                        }
+                    }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.leading, 48)
     }
 }
 
 /// Balonsuz, tam genişlikte asistan cevabı; üstte araç etkinlikleri, altta dosyalar ve kaynaklar.
 private struct AssistantMessage: View {
+    @Environment(SpeechReader.self) private var speech
     let item: ChatItem
     let isStreaming: Bool
     let openDocument: (DocumentFile) -> Void
@@ -284,11 +363,24 @@ private struct AssistantMessage: View {
                         Button(L("Select Text", "Metni seç"), systemImage: "selection.pin.in.out") {
                             selectText(plainText(fromMarkdown: item.text))
                         }
+                        if speech.speakingID == item.id {
+                            Button(L("Stop Reading", "Okumayı durdur"), systemImage: "stop.circle") {
+                                speech.stop()
+                            }
+                        } else {
+                            Button(L("Read Aloud", "Sesli oku"), systemImage: "speaker.wave.2") {
+                                speech.toggle(item.id, text: plainText(fromMarkdown: item.text))
+                            }
+                        }
                     }
                     .disabled(isStreaming)
             } else if isStreaming, item.activities.allSatisfy({ $0.state != .running }) {
                 ProgressView()
                     .tint(Palette.textMuted)
+            }
+
+            ForEach(item.images ?? [], id: \.self) { name in
+                GeneratedImageView(name: name)
             }
 
             ForEach(item.files, id: \.self) { name in

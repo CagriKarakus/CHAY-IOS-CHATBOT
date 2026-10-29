@@ -40,7 +40,8 @@ final class ConversationRecord {
 
     /// İlk kullanıcı mesajının başı.
     private static func title(for content: ConversationContent) -> String {
-        let first = content.items.first { $0.role == .user }?.text ?? L("New chat", "Yeni sohbet")
+        let text = content.items.first { $0.role == .user }?.text ?? ""
+        let first = text.isEmpty ? L("New chat", "Yeni sohbet") : text
         let line = first.components(separatedBy: .newlines).first ?? first
         return line.count > 60 ? String(line.prefix(60)) + "…" : line
     }

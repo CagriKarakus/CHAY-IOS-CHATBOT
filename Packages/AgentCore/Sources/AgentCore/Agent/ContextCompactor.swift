@@ -23,7 +23,9 @@ public enum ContextCompactor {
             total + (message.content?.count ?? 0)
                 + (message.toolCalls?.reduce(0) { $0 + $1.function.arguments.count } ?? 0)
         }
-        return characters / 3
+        // Görsel/ses başına sağlayıcıya göre değişen yaklaşık bir maliyet.
+        let attachments = messages.reduce(0) { $0 + ($1.attachments?.count ?? 0) }
+        return characters / 3 + attachments * 1_000
     }
 
     /// Son kullanıcı mesajından önceki araç sonuçlarını (okunmuş sayfalar, arama sonuçları) kısaltır.
@@ -56,7 +58,8 @@ public enum ContextCompactor {
             case .system:
                 return nil
             case .user:
-                return "User: \(message.content ?? "")"
+                let attached = (message.attachments ?? []).map { "[\($0.kind.rawValue) attached]" }
+                return (["User: \(message.content ?? "")"] + attached).joined(separator: " ")
             case .assistant:
                 var parts: [String] = []
                 if let content = message.content, !content.isEmpty { parts.append("Assistant: \(content)") }
