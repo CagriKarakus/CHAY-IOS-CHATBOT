@@ -3,14 +3,36 @@ import Foundation
 
 /// Kestirmeler'den gelen, uygulama açılınca gönderilecek istek.
 struct ShortcutRequest: Codable {
+    /// Kestirmeden gelen dosya: kutu klasöründeki kopyası ve özgün adı.
+    struct File: Codable {
+        let storedName: String
+        let originalName: String
+    }
+
     let prompt: String
     let modelID: UUID?
+    /// Eski isteklerde yok.
+    var files: [File]?
 }
 
 /// Eylem ile sohbet ekranı arasındaki kutu: istek önce kaydedilir, ekran hazır olunca alınıp gönderilir.
 enum ShortcutInbox {
     static let didReceive = Notification.Name("ShortcutInbox.didReceive")
     private static let key = "shortcut.pending"
+
+    /// Kestirmeden gelen dosyaların geçici kopyaları.
+    static var directory: URL {
+        URL.applicationSupportDirectory.appendingPathComponent("ShortcutInbox")
+    }
+
+    /// Dosyayı kutuya kopyalar; istekte adıyla taşınır.
+    static func store(_ data: Data, originalName: String) -> ShortcutRequest.File? {
+        let ext = (originalName as NSString).pathExtension
+        let storedName = UUID().uuidString + (ext.isEmpty ? "" : "." + ext)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard (try? data.write(to: directory.appendingPathComponent(storedName), options: .atomic)) != nil else { return nil }
+        return ShortcutRequest.File(storedName: storedName, originalName: originalName)
+    }
 
     static func put(_ request: ShortcutRequest) {
         if let data = try? JSONEncoder().encode(request) {
@@ -74,15 +96,23 @@ struct AskCHAYIntent: AppIntent {
     @Parameter(title: "Model")
     var model: ModelEntity?
 
+    /// Görsel, ekran görüntüsü, PDF, Office veya metin dosyaları; sohbete ek olarak eklenir.
+    @Parameter(title: "Files")
+    var files: [IntentFile]?
+
     static var parameterSummary: some ParameterSummary {
         Summary("Ask CHAY \(\.$prompt)") {
             \.$model
+            \.$files
         }
     }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        ShortcutInbox.put(ShortcutRequest(prompt: prompt, modelID: model?.id))
+        let stored = (files ?? []).compactMap { file in
+            ShortcutInbox.store(file.data, originalName: file.filename)
+        }
+        ShortcutInbox.put(ShortcutRequest(prompt: prompt, modelID: model?.id, files: stored))
         return .result()
     }
 }

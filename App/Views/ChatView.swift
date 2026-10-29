@@ -218,6 +218,17 @@ struct ChatView: View {
         path = []
         // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
         viewModel.startNewChat(modelOverride: request.modelID)
+        // Kestirmeden gelen dosyalar: görseller görsel olarak, diğerleri metni çıkarılarak eklenir.
+        for file in request.files ?? [] {
+            let url = ShortcutInbox.directory.appendingPathComponent(file.storedName)
+            defer { try? FileManager.default.removeItem(at: url) }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            if UIImage(data: data) != nil {
+                viewModel.addImage(data)
+            } else if let text = extractDocumentText(from: url) {
+                viewModel.addDocument(text: text, name: file.originalName)
+            }
+        }
         viewModel.input = request.prompt
         viewModel.send(using: settings)
     }
