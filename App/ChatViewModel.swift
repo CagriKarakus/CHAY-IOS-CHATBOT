@@ -109,6 +109,8 @@ final class ChatViewModel {
     private var context: ModelContext?
     private var usageTracker: UsageTracker?
     private var skillLibrary: SkillLibrary?
+    /// Bu turdaki aramaların sayılacağı servis.
+    private var currentSearchProvider = SearchProvider.tavily
     private var currentModel: (providerID: UUID, name: String)?
 
     var canSend: Bool {
@@ -418,6 +420,7 @@ final class ChatViewModel {
         }
         guard let context, let selected = settings.selected else { return }
         currentModel = (selected.provider.id, selected.model.name)
+        currentSearchProvider = settings.searchProvider
         let notes = SwiftDataNoteStore(context: context)
         let usesMemory = self.usesMemory
         let skills = skillLibrary?.active(in: selectedSkillIDs).map(\.skill) ?? []
@@ -542,7 +545,7 @@ final class ChatViewModel {
             if let activity = items[index].activities.firstIndex(where: { $0.id == callID }) {
                 items[index].activities[activity].state = failed ? .failed : .done
                 if !failed, items[index].activities[activity].toolName == "web_search" {
-                    usageTracker?.recordSearch()
+                    usageTracker?.recordSearch(with: currentSearchProvider)
                 }
             }
             for name in files.map(\.lastPathComponent) where !items[index].files.contains(name) {

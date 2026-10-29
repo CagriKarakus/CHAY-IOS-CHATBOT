@@ -26,6 +26,8 @@ final class UsageTracker {
         /// Anahtar: "<provider id>|<model adı>".
         var models: [String: Totals] = [:]
         var tavilySearches = 0
+        /// Tavily dışındaki servislerin arama sayıları (`SearchProvider.rawValue`); eski kayıtlarda yok.
+        var otherSearches: [String: Int]?
         var since = Date()
     }
 
@@ -42,6 +44,11 @@ final class UsageTracker {
     }
 
     var tavilySearches: Int { snapshot.tavilySearches }
+
+    /// Bu cihazdan, verilen servisle yapılan başarılı arama sayısı.
+    func searches(with provider: SearchProvider) -> Int {
+        provider == .tavily ? snapshot.tavilySearches : snapshot.otherSearches?[provider.rawValue] ?? 0
+    }
     var since: Date { snapshot.since }
 
     func totals(providerID: UUID, model: String) -> Totals {
@@ -64,8 +71,13 @@ final class UsageTracker {
         save()
     }
 
-    func recordSearch() {
-        snapshot.tavilySearches += 1
+    func recordSearch(with provider: SearchProvider) {
+        if provider == .tavily {
+            snapshot.tavilySearches += 1
+        } else {
+            snapshot.otherSearches = snapshot.otherSearches ?? [:]
+            snapshot.otherSearches?[provider.rawValue, default: 0] += 1
+        }
         save()
     }
 

@@ -38,41 +38,23 @@ struct UsageView: View {
             }
 
             Section {
-                switch tavily {
-                case .loading:
-                    HStack {
-                        Text(L("Loading account usage…", "Hesap kullanımı yükleniyor…"))
-                            .foregroundStyle(Palette.textMuted)
-                        Spacer()
-                        ProgressView()
+                ForEach(SearchProvider.allCases) { provider in
+                    let count = usage.searches(with: provider)
+                    if count > 0 || provider == settings.searchProvider {
+                        valueRow(provider.title, count.formatted())
                     }
-                case let .loaded(account):
-                    if let plan = account.account?.currentPlan {
-                        valueRow(L("Plan", "Plan"), plan)
-                    }
-                    if let used = account.account?.planUsage {
-                        valueRow(L("Account credits", "Hesap kredisi"), credits(used, of: account.account?.planLimit))
-                    }
-                    if let used = account.key?.usage {
-                        valueRow(L("This key", "Bu key"), credits(used, of: account.key?.limit))
-                    }
-                case let .failed(message):
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(Palette.red)
-                case .noKey:
-                    EmptyView()
                 }
-                valueRow(L("Searches from this device", "Bu cihazdan aramalar"), usage.tavilySearches.formatted())
             } header: {
-                header("Tavily")
+                header(L("Searches from this device", "Bu cihazdan aramalar"))
             } footer: {
-                footer(L(
-                    "Account credits come from Tavily and include all apps and devices. Each basic search uses 1 credit.",
-                    "Hesap kredisi Tavily'den alınır ve tüm uygulama ve cihazları kapsar. Her temel arama 1 kredi kullanır."
-                ))
+                footer(L("Successful web searches per service. The selected service is set in Settings > Web search.",
+                         "Servise göre başarılı web aramaları. Kullanılan servis Ayarlar > Web araması'ndan seçilir."))
             }
             .listRowBackground(Palette.surface)
+
+            if settings.searchProvider == .tavily {
+                tavilyAccountSection
+            }
 
             Section {
                 Button(L("Reset Counters", "Sayaçları sıfırla"), role: .destructive) { confirmingReset = true }
@@ -154,7 +136,48 @@ struct UsageView: View {
         }
     }
 
+    /// Tavily hesabının planı ve kredisi (sadece Tavily seçiliyken).
+    private var tavilyAccountSection: some View {
+        Section {
+            switch tavily {
+            case .loading:
+                HStack {
+                    Text(L("Loading account usage…", "Hesap kullanımı yükleniyor…"))
+                        .foregroundStyle(Palette.textMuted)
+                    Spacer()
+                    ProgressView()
+                }
+            case let .loaded(account):
+                if let plan = account.account?.currentPlan {
+                    valueRow(L("Plan", "Plan"), plan)
+                }
+                if let used = account.account?.planUsage {
+                    valueRow(L("Account credits", "Hesap kredisi"), credits(used, of: account.account?.planLimit))
+                }
+                if let used = account.key?.usage {
+                    valueRow(L("This key", "Bu key"), credits(used, of: account.key?.limit))
+                }
+            case let .failed(message):
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.red)
+            case .noKey:
+                Text(L("No Tavily key entered.", "Tavily key'i girilmemiş."))
+                    .foregroundStyle(Palette.textMuted)
+            }
+        } header: {
+            header(L("Tavily account", "Tavily hesabı"))
+        } footer: {
+            footer(L(
+                "Account credits come from Tavily and include all apps and devices. Each basic search uses 1 credit.",
+                "Hesap kredisi Tavily'den alınır ve tüm uygulama ve cihazları kapsar. Her temel arama 1 kredi kullanır."
+            ))
+        }
+        .listRowBackground(Palette.surface)
+    }
+
     private func loadTavily() async {
+        guard settings.searchProvider == .tavily else { return }
         guard !settings.tavilyKey.isEmpty else {
             tavily = .noKey
             return
