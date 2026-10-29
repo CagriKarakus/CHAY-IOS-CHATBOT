@@ -32,6 +32,10 @@ final class ConversationRecord {
     var searchText: String = ""
     /// Sohbetin ait olduğu proje (`ProjectRecord.id`); projesiz sohbetlerde `nil`.
     var projectID: UUID?
+    /// Kenar menüsünde en üstte gösterilir.
+    var isPinned: Bool = false
+    /// Kullanıcının verdiği ad; `nil` ise başlık ilk mesajdan üretilir.
+    var customTitle: String?
 
     init(content: ConversationContent) {
         id = UUID()
@@ -59,8 +63,8 @@ final class ConversationRecord {
 
     func update(_ content: ConversationContent) {
         contentData = (try? JSONEncoder().encode(content)) ?? contentData
-        // İlk mesaj düzenlendiyse başlık da güncellensin.
-        title = Self.title(for: content)
+        // İlk mesaj düzenlendiyse başlık da güncellensin (kullanıcı ad vermediyse).
+        title = customTitle ?? Self.title(for: content)
         searchText = Self.searchText(for: content)
         updatedAt = .now
     }

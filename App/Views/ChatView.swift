@@ -6,7 +6,8 @@ import SwiftUI
 
 struct ChatView: View {
     private enum Route: Hashable {
-        case conversations, projects, documents, notes
+        case conversations, projects, documents
+        case project(UUID)
     }
 
     @Environment(AppSettings.self) private var settings
@@ -29,9 +30,100 @@ struct ChatView: View {
     @State private var viewedImage: ViewedImage?
     @State private var sharedFile: SharedFile?
     @State private var newPrompt: SavedPrompt?
+    @State private var sidebarOpen = false
+    /// Kenar menüsü sürüklenirken parmağın yatay yer değiştirmesi.
+    @State private var dragTranslation: CGFloat = 0
+    @State private var renaming: ConversationRecord?
+    @State private var renameText = ""
+    @State private var deleting: ConversationRecord?
+    @Query(sort: \ProjectRecord.createdAt, order: .reverse) private var projects: [ProjectRecord]
+    @Query private var conversations: [ConversationRecord]
     @FocusState private var inputFocused: Bool
 
+    /// Açık sohbetin kaydı; henüz kaydedilmemişse veya gizliyse `nil`.
+    private var currentRecord: ConversationRecord? {
+        viewModel.conversationID.flatMap { id in conversations.first { $0.id == id } }
+    }
+
     var body: some View {
+        GeometryReader { geometry in
+            let width = min(geometry.size.width * 0.85, 360)
+            let offset = min(max((sidebarOpen ? width : 0) + dragTranslation, 0), width)
+            ZStack(alignment: .leading) {
+                sidebar
+                    .frame(width: width)
+                    .offset(x: offset - width)
+                chatStack
+                    .offset(x: offset)
+                    .overlay {
+                        if offset > 0 {
+                            Color.black
+                                .opacity(0.3 * offset / width)
+                                .ignoresSafeArea()
+                                .offset(x: offset)
+                                .onTapGesture { setSidebar(open: false) }
+                        }
+                    }
+            }
+            // Sohbetin her yerinden sağa çekince açılır; açık sayfalarda (geri kaydırma) devre dışı.
+            .simultaneousGesture(sidebarDrag(width: width), including: path.isEmpty ? .all : .subviews)
+        }
+    }
+
+    private var sidebar: some View {
+        SidebarView(
+            currentID: viewModel.conversationID,
+            openChat: { record in
+                viewModel.open(record)
+                path = []
+                setSidebar(open: false)
+            },
+            openProjects: { show(.projects) },
+            openProject: { show(.project($0.id)) },
+            openDocuments: { show(.documents) },
+            search: { show(.conversations) },
+            openSettings: {
+                showingSettings = true
+                setSidebar(open: false)
+            },
+            newChat: {
+                viewModel.startNewChat()
+                path = []
+                setSidebar(open: false)
+            },
+            chatMenu: { record in chatMenu(for: record) }
+        )
+    }
+
+    private func show(_ route: Route) {
+        path = [route]
+        setSidebar(open: false)
+    }
+
+    private func setSidebar(open: Bool) {
+        inputFocused = false
+        withAnimation(.snappy(duration: 0.25)) {
+            sidebarOpen = open
+            dragTranslation = 0
+        }
+    }
+
+    private func sidebarDrag(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                // Dikey kaydırmayı (mesaj listesi) bölmesin: yatay hareket baskınsa başla.
+                guard dragTranslation != 0 || abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                if dragTranslation == 0 { inputFocused = false }
+                dragTranslation = value.translation.width
+            }
+            .onEnded { value in
+                guard dragTranslation != 0 else { return }
+                let end = (sidebarOpen ? width : 0) + value.predictedEndTranslation.width
+                setSidebar(open: end > width / 2)
+            }
+    }
+
+    private var chatStack: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 messageList
@@ -59,19 +151,8 @@ struct ChatView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button(L("Chats", "Sohbetler"), systemImage: "bubble.left.and.bubble.right") { path.append(.conversations) }
-                        Button(L("Projects", "Projeler"), systemImage: "folder.badge.gearshape") { path.append(.projects) }
-                        Button(L("Documents", "Dokümanlar"), systemImage: "folder") { path.append(.documents) }
-                        Button(L("Memory", "Hafıza"), systemImage: "brain") { path.append(.notes) }
-                        Button(L("Settings", "Ayarlar"), systemImage: "slider.horizontal.3") { showingSettings = true }
-                        Menu {
-                            Button("Markdown (.md)", systemImage: "doc.plaintext") { export(pdf: false) }
-                            Button("PDF", systemImage: "doc.richtext") { export(pdf: true) }
-                        } label: {
-                            Label(L("Export Chat", "Sohbeti dışa aktar"), systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(viewModel.items.isEmpty)
+                    Button {
+                        setSidebar(open: true)
                     } label: {
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(Palette.text)
@@ -79,15 +160,27 @@ struct ChatView: View {
                     .accessibilityLabel(L("Menu", "Menü"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        inputFocused = false
-                        viewModel.startNewChat(incognito: !viewModel.isIncognito)
-                    } label: {
-                        Image(systemName: viewModel.isIncognito ? "eye.slash.fill" : "eye.slash")
-                            .foregroundStyle(viewModel.isIncognito ? Palette.purple : (viewModel.isStreaming ? Palette.textMuted : Palette.text))
+                    // Yeni sohbette gizli sohbet düğmesi; mesaj gönderilince yerini sohbet menüsü alır.
+                    if viewModel.isIncognito || viewModel.items.isEmpty {
+                        Button {
+                            inputFocused = false
+                            viewModel.startNewChat(incognito: !viewModel.isIncognito)
+                        } label: {
+                            Image(systemName: viewModel.isIncognito ? "eye.slash.fill" : "eye.slash")
+                                .foregroundStyle(viewModel.isIncognito ? Palette.purple : (viewModel.isStreaming ? Palette.textMuted : Palette.text))
+                        }
+                        .disabled(viewModel.isStreaming)
+                        .accessibilityLabel(viewModel.isIncognito ? L("Leave Incognito", "Gizli sohbetten çık") : L("Incognito Chat", "Gizli sohbet"))
+                    } else if let record = currentRecord {
+                        Menu {
+                            chatMenu(for: record)
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .foregroundStyle(viewModel.isStreaming ? Palette.textMuted : Palette.text)
+                        }
+                        .disabled(viewModel.isStreaming)
+                        .accessibilityLabel(L("Chat options", "Sohbet seçenekleri"))
                     }
-                    .disabled(viewModel.isStreaming)
-                    .accessibilityLabel(viewModel.isIncognito ? L("Leave Incognito", "Gizli sohbetten çık") : L("Incognito Chat", "Gizli sohbet"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -124,7 +217,20 @@ struct ChatView: View {
                         }
                     )
                 case .documents: DocumentsView()
-                case .notes: NotesView()
+                case let .project(id):
+                    if let project = projects.first(where: { $0.id == id }) {
+                        ProjectDetailView(
+                            project: project,
+                            startChat: { project in
+                                viewModel.startNewChat(project: project)
+                                path = []
+                            },
+                            openChat: { record in
+                                viewModel.open(record)
+                                path = []
+                            }
+                        )
+                    }
                 }
             }
             .alert(
@@ -155,6 +261,27 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .alert(L("Rename Chat", "Sohbeti yeniden adlandır"), isPresented: Binding(
+                get: { renaming != nil },
+                set: { if !$0 { renaming = nil } }
+            )) {
+                TextField(L("Chat name", "Sohbet adı"), text: $renameText)
+                Button(L("Cancel", "Vazgeç"), role: .cancel) { renaming = nil }
+                Button(L("Save", "Kaydet")) {
+                    if let renaming { rename(renaming, to: renameText) }
+                    renaming = nil
+                }
+            }
+            .confirmationDialog(
+                L("Delete this chat?", "Bu sohbet silinsin mi?"),
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible,
+                presenting: deleting
+            ) { record in
+                Button(L("Delete", "Sil"), role: .destructive) { delete(record) }
+            } message: { _ in
+                Text(L("This can't be undone.", "Bu işlem geri alınamaz."))
             }
             .fullScreenCover(item: $viewedImage) { viewed in
                 ImageViewer(image: viewed.image)
@@ -515,16 +642,87 @@ struct ChatView: View {
         .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
     }
 
-    private func export(pdf: Bool) {
-        let title = viewModel.title
+    // MARK: - Sohbet menüsü (sağ üst ve kenar menüsünde basılı tutunca)
+
+    @ViewBuilder
+    private func chatMenu(for record: ConversationRecord) -> some View {
+        Button(record.isPinned ? L("Unpin", "Sabitlemeyi kaldır") : L("Pin", "Sabitle"),
+               systemImage: record.isPinned ? "pin.slash" : "pin") {
+            record.isPinned.toggle()
+            try? modelContext.save()
+        }
+        Divider()
+        Menu {
+            Button("Markdown (.md)", systemImage: "doc.plaintext") { share(record, pdf: false) }
+            Button("PDF", systemImage: "doc.richtext") { share(record, pdf: true) }
+        } label: {
+            Label(L("Share", "Paylaş"), systemImage: "square.and.arrow.up")
+        }
+        Button(L("Rename", "Yeniden adlandır"), systemImage: "pencil") {
+            renameText = record.title
+            renaming = record
+        }
+        Menu {
+            if projects.isEmpty {
+                Text(L("No projects yet", "Henüz proje yok"))
+            }
+            ForEach(projects) { project in
+                Button(project.name, systemImage: record.projectID == project.id ? "checkmark" : "folder") {
+                    move(record, to: project)
+                }
+            }
+            if record.projectID != nil {
+                Divider()
+                Button(L("Remove from Project", "Projeden çıkar"), systemImage: "folder.badge.minus") {
+                    move(record, to: nil)
+                }
+            }
+        } label: {
+            Label(L("Add to Project", "Projeye ekle"), systemImage: "folder.badge.plus")
+        }
+        Divider()
+        Button(L("Delete", "Sil"), systemImage: "trash", role: .destructive) {
+            deleting = record
+        }
+    }
+
+    private func share(_ record: ConversationRecord, pdf: Bool) {
+        let title = record.title
+        let items = record.id == viewModel.conversationID ? viewModel.items : record.content.items
         do {
             let url = pdf
-                ? try ChatExport.temporaryFile(named: title, extension: "pdf", data: ChatExport.pdf(title: title, items: viewModel.items))
-                : try ChatExport.temporaryFile(named: title, extension: "md", data: Data(ChatExport.markdown(title: title, items: viewModel.items).utf8))
+                ? try ChatExport.temporaryFile(named: title, extension: "pdf", data: ChatExport.pdf(title: title, items: items))
+                : try ChatExport.temporaryFile(named: title, extension: "md", data: Data(ChatExport.markdown(title: title, items: items).utf8))
             sharedFile = SharedFile(url: url)
         } catch {
             viewModel.errorMessage = userFacingMessage(for: error)
         }
+    }
+
+    /// Boş ad verilirse ilk mesajdan üretilen başlığa döner.
+    private func rename(_ record: ConversationRecord, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        record.customTitle = trimmed.isEmpty ? nil : trimmed
+        record.title = trimmed.isEmpty ? ConversationRecord.title(for: record.content) : trimmed
+        try? modelContext.save()
+    }
+
+    private func move(_ record: ConversationRecord, to project: ProjectRecord?) {
+        record.projectID = project?.id
+        try? modelContext.save()
+        if record.id == viewModel.conversationID {
+            viewModel.setProject(project)
+        }
+    }
+
+    private func delete(_ record: ConversationRecord) {
+        if record.id == viewModel.conversationID {
+            viewModel.startNewChat()
+        }
+        // Sohbetteki görsellerin tam boyutlu kopyalarını da sil.
+        AttachmentFiles.delete(record.content.items.flatMap { $0.attachments ?? [] }.compactMap(\.file))
+        modelContext.delete(record)
+        try? modelContext.save()
     }
 
     private func startRecording() {

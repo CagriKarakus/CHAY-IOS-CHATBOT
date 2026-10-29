@@ -16,6 +16,9 @@ struct Backup: Codable {
         let updatedAt: Date
         let content: ConversationContent
         var projectID: UUID?
+        /// Eski yedeklerde yok.
+        var isPinned: Bool?
+        var customTitle: String?
     }
 
     struct StoredProject: Codable {
@@ -74,7 +77,8 @@ enum BackupService {
             conversations: conversations.map {
                 Backup.StoredConversation(
                     id: $0.id, title: $0.title, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
-                    content: $0.content, projectID: $0.projectID
+                    content: $0.content, projectID: $0.projectID,
+                    isPinned: $0.isPinned, customTitle: $0.customTitle
                 )
             },
             skills: skills.skills,
@@ -115,14 +119,17 @@ enum BackupService {
 
         let existingConversations = Set(try context.fetch(FetchDescriptor<ConversationRecord>()).map(\.id))
         for conversation in backup.conversations where !existingConversations.contains(conversation.id) {
-            context.insert(ConversationRecord(
+            let record = ConversationRecord(
                 id: conversation.id,
                 title: conversation.title,
                 createdAt: conversation.createdAt,
                 updatedAt: conversation.updatedAt,
                 content: conversation.content,
                 projectID: conversation.projectID
-            ))
+            )
+            record.isPinned = conversation.isPinned ?? false
+            record.customTitle = conversation.customTitle
+            context.insert(record)
             summary.conversations += 1
         }
 

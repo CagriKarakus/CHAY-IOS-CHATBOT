@@ -87,7 +87,7 @@ struct ProjectsView: View {
 }
 
 /// Proje ayrıntısı: yeni sohbet, talimatlar, dosyalar ve projedeki sohbetler.
-private struct ProjectDetailView: View {
+struct ProjectDetailView: View {
     @Bindable var project: ProjectRecord
     let startChat: (ProjectRecord) -> Void
     let openChat: (ConversationRecord) -> Void

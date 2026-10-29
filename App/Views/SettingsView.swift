@@ -56,6 +56,12 @@ struct SettingsView: View {
                             .foregroundStyle(Palette.textBright)
                     }
                     NavigationLink {
+                        NotesView()
+                    } label: {
+                        Label(L("Memory", "Hafıza"), systemImage: "brain")
+                            .foregroundStyle(Palette.textBright)
+                    }
+                    NavigationLink {
                         SkillsView()
                     } label: {
                         Label(L("Skills", "Skill'ler"), systemImage: "sparkles")
