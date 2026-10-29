@@ -41,7 +41,8 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # iOS 26+: uzun cevaplar uygulamadan çıkınca da sürsün (ContinuedTurn).
         UIBackgroundModes: [processing]
-        BGTaskSchedulerPermittedIdentifiers: ["dev.cagri.aiassistant.turn.*"]
+        # İkincisi: Sideloadly "Use automatic bundle ID" kimliğin sonuna hesabın takım kodunu ekliyor.
+        BGTaskSchedulerPermittedIdentifiers: ["dev.cagri.aiassistant.turn.*", "dev.cagri.aiassistant.ZU45CA9V93.turn.*"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.cagri.aiassistant

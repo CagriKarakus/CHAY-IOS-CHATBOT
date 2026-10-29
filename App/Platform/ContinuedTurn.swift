@@ -6,7 +6,8 @@ import Foundation
 /// (yaklaşık 30 sn ek süre, uygulamaya dönünce kaldığı yerden devam).
 @MainActor
 final class ContinuedTurn {
-    /// Info.plist'te `BGTaskSchedulerPermittedIdentifiers`: "dev.cagri.aiassistant.turn.*".
+    /// Info.plist'te `BGTaskSchedulerPermittedIdentifiers`: "dev.cagri.aiassistant.turn.*" ve Sideloadly'nin
+    /// değiştirdiği kimlik için "dev.cagri.aiassistant.<takım kodu>.turn.*".
     private static let prefix = "dev.cagri.aiassistant.turn."
     private static let statusKey = "background.continuedStatus"
 
