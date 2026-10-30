@@ -116,6 +116,10 @@ $env:LLM_API_KEY  = "<api-key>"
 powershell -ExecutionPolicy Bypass -File scripts\faz0.ps1 -Model "<model>"
 ```
 
+## License
+
+CHAY is released under the [Apache License 2.0](LICENSE). Third-party packages keep their own licenses; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ## Roadmap
 
 - iCloud sync and Share Extension (need a paid developer account)

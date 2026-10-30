@@ -116,6 +116,10 @@ $env:LLM_API_KEY  = "<api-key>"
 powershell -ExecutionPolicy Bypass -File scripts\faz0.ps1 -Model "<model>"
 ```
 
+## Lisans
+
+CHAY [Apache License 2.0](LICENSE) ile yayınlanmıştır. Üçüncü taraf paketler kendi lisanslarına tabidir; bkz. [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ## Yol haritası
 
 - iCloud senkronizasyonu ve Share Extension (ücretli geliştirici hesabı gerekir)
