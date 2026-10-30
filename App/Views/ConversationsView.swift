@@ -5,6 +5,8 @@ import SwiftUI
 struct ConversationsView: View {
     /// Şu an açık olan sohbet (işaretlemek ve silinirse kapatmak için).
     let currentID: UUID?
+    /// Cevap yazılırken açık sohbet silinemez, başka sohbet açılamaz.
+    let isBusy: Bool
     let open: (ConversationRecord) -> Void
     let deletedCurrent: () -> Void
 
@@ -42,6 +44,8 @@ struct ConversationsView: View {
                         }
                     }
                 }
+                .disabled(isBusy)
+                .deleteDisabled(isBusy && conversation.id == currentID)
                 .listRowBackground(Palette.surface)
             }
             .onDelete(perform: delete)

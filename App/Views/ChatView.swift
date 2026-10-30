@@ -73,6 +73,7 @@ struct ChatView: View {
     private var sidebar: some View {
         SidebarView(
             currentID: viewModel.conversationID,
+            isBusy: viewModel.isStreaming,
             openChat: { record in
                 viewModel.open(record)
                 path = []
@@ -165,7 +166,7 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // Yeni sohbette gizli sohbet düğmesi; mesaj gönderilince yerini sohbet menüsü alır.
-                    if viewModel.isIncognito || viewModel.items.isEmpty {
+                    if viewModel.isIncognito || !viewModel.hasMessages {
                         Button {
                             inputFocused = false
                             viewModel.startNewChat(incognito: !viewModel.isIncognito)
@@ -203,6 +204,7 @@ struct ChatView: View {
                 case .conversations:
                     ConversationsView(
                         currentID: viewModel.conversationID,
+                        isBusy: viewModel.isStreaming,
                         open: { record in
                             viewModel.open(record)
                             path = []
@@ -212,10 +214,12 @@ struct ChatView: View {
                 case .projects:
                     ProjectsView(
                         startChat: { project in
+                            guard !viewModel.isStreaming else { return }
                             viewModel.startNewChat(project: project)
                             path = []
                         },
                         openChat: { record in
+                            guard !viewModel.isStreaming else { return }
                             viewModel.open(record)
                             path = []
                         }
@@ -229,10 +233,12 @@ struct ChatView: View {
                         ProjectDetailView(
                             project: project,
                             startChat: { project in
+                                guard !viewModel.isStreaming else { return }
                                 viewModel.startNewChat(project: project)
                                 path = []
                             },
                             openChat: { record in
+                                guard !viewModel.isStreaming else { return }
                                 viewModel.open(record)
                                 path = []
                             }
@@ -325,7 +331,7 @@ struct ChatView: View {
             .fullScreenCover(isPresented: $showingCamera) {
                 CameraPicker { image in
                     if let data = image.jpegData(compressionQuality: 0.9) {
-                        viewModel.addImage(data)
+                        Task { await viewModel.addImage(data) }
                     }
                 }
                 .ignoresSafeArea()
@@ -380,6 +386,10 @@ struct ChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: ShortcutInbox.didReceive)) { _ in
                 runShortcutRequest()
             }
+            // Cevap yazılırken gelen kestirme, cevap bitince çalışır.
+            .onChange(of: viewModel.isStreaming) {
+                if !viewModel.isStreaming { runShortcutRequest() }
+            }
             .onChange(of: scenePhase) {
                 switch scenePhase {
                 case .background: viewModel.appMovedToBackground()
@@ -399,8 +409,12 @@ struct ChatView: View {
         viewModel.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
         path = []
         // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
+        let draft = viewModel.setAsideDraft()
         viewModel.startNewChat(modelOverride: request.modelID)
-        Task { await sendShortcutRequest(request) }
+        Task {
+            await sendShortcutRequest(request)
+            viewModel.restoreDraft(draft)
+        }
     }
 
     /// Dosyaları ekleyip isteği gönderir; taranmış PDF okumak zaman alabilir.
@@ -415,7 +429,7 @@ struct ChatView: View {
                 continue
             }
             if UIImage(data: data) != nil {
-                viewModel.addImage(data)
+                await viewModel.addImage(data)
             } else if let reading = await readDocument(from: url) {
                 viewModel.addDocument(text: reading.text, name: file.originalName)
             } else {
@@ -433,63 +447,15 @@ struct ChatView: View {
     }
 
     private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    ForEach(viewModel.items) { item in
-                        switch item.role {
-                        case .user:
-                            UserMessage(
-                                text: item.text,
-                                attachments: item.attachments ?? [],
-                                showImage: { viewedImage = ViewedImage(image: $0) },
-                                edit: viewModel.canEdit(item) ? {
-                                    viewModel.beginEditing(item)
-                                    inputFocused = true
-                                } : nil,
-                                variant: viewModel.variantPosition(of: item),
-                                showVariant: { viewModel.showVariant($0, at: item) },
-                                isStreaming: viewModel.isStreaming
-                            )
-                            .id(item.id)
-                        case .assistant:
-                            AssistantMessage(
-                                item: item,
-                                isStreaming: viewModel.isStreaming && item.id == viewModel.items.last?.id,
-                                openDocument: { openedDocument = $0 },
-                                selectText: { selectingText = SelectableTextItem(text: $0) },
-                                showImage: { viewedImage = ViewedImage(image: $0) },
-                                regenerate: item.id == viewModel.items.last?.id && viewModel.canRegenerate ? { modelID in
-                                    if let modelID {
-                                        viewModel.clearModelOverride()
-                                        settings.select(modelID)
-                                    }
-                                    viewModel.regenerate(using: settings)
-                                } : nil,
-                                variant: viewModel.variantPosition(of: item),
-                                showVariant: { viewModel.showVariant($0, at: item) }
-                            )
-                            .id(item.id)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            // Mesajların üzerine dokununca klavye kapanır (linkler çalışmaya devam eder).
-            .simultaneousGesture(TapGesture().onEnded { inputFocused = false })
-            .overlay {
-                if viewModel.items.isEmpty {
-                    emptyState
-                        .onTapGesture { inputFocused = false }
-                }
-            }
-            .onChange(of: viewModel.items.last?.text) {
-                if let id = viewModel.items.last?.id {
-                    proxy.scrollTo(id, anchor: .bottom)
-                }
-            }
+        MessageList(
+            viewModel: viewModel,
+            inputFocused: $inputFocused,
+            openDocument: { openedDocument = $0 },
+            selectText: { selectingText = SelectableTextItem(text: $0) },
+            showImage: { viewedImage = ViewedImage(image: $0) }
+        ) {
+            emptyState
+                .onTapGesture { inputFocused = false }
         }
     }
 
@@ -568,30 +534,9 @@ struct ChatView: View {
                 ModelMenu(overrideID: viewModel.modelOverrideID, onSelect: viewModel.clearModelOverride)
                 EffortMenu(overrideID: viewModel.modelOverrideID)
                 Spacer()
-                if viewModel.isStreaming {
-                    Button {
-                        viewModel.stop()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.background)
-                            .frame(width: 32, height: 32)
-                            .background(Palette.textBright, in: .circle)
-                    }
-                    .accessibilityLabel(L("Stop", "Durdur"))
-                } else {
-                    Button {
-                        inputFocused = false
-                        viewModel.send(using: settings)
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Palette.background)
-                            .frame(width: 32, height: 32)
-                            .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
-                    }
-                    .disabled(!viewModel.canSend)
-                    .accessibilityLabel(L("Send", "Gönder"))
+                SendControl(viewModel: viewModel) {
+                    inputFocused = false
+                    viewModel.send(using: settings)
                 }
             }
         }
@@ -610,7 +555,7 @@ struct ChatView: View {
             Task {
                 for item in items {
                     if let data = try? await item.loadTransferable(type: Data.self) {
-                        viewModel.addImage(data)
+                        await viewModel.addImage(data)
                     }
                 }
             }
@@ -646,12 +591,7 @@ struct ChatView: View {
                             inputFocused = true
                         }
                     }
-                    if !viewModel.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Divider()
-                        Button(L("Save Text as Prompt", "Metni komut olarak kaydet"), systemImage: "plus") {
-                            newPrompt = SavedPrompt(title: "", text: viewModel.input)
-                        }
-                    }
+                    SavePromptButton(viewModel: viewModel) { newPrompt = SavedPrompt(title: "", text: $0) }
                 } label: {
                     Label(L("Prompts", "Hazır komutlar"), systemImage: "text.badge.star")
                 }
@@ -780,6 +720,7 @@ struct ChatView: View {
         Button(L("Delete", "Sil"), systemImage: "trash", role: .destructive) {
             deleting = record
         }
+        .disabled(viewModel.isStreaming && record.id == viewModel.conversationID)
     }
 
     private func share(_ record: ConversationRecord, pdf: Bool) {
@@ -924,8 +865,14 @@ private struct AssistantMessage: View {
             }
 
             if !item.text.isEmpty {
-                Markdown(item.text)
-                    .markdownTheme(.atomOneDark)
+                Group {
+                    if isStreaming {
+                        StreamingMarkdown(text: item.text)
+                    } else {
+                        Markdown(item.text)
+                            .markdownTheme(.atomOneDark)
+                    }
+                }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .contextMenu {
@@ -1124,5 +1071,216 @@ private struct VariantPager: View {
         }
         .font(.caption)
         .foregroundStyle(Palette.textMuted)
+    }
+}
+
+/// Sohbetin mesajları. `items`'ı okuyan tek görünüm budur; akış sırasında ekranın geri kalanı yenilenmez.
+private struct MessageList<EmptyState: View>: View {
+    private static var bottomID: String { "message-list-bottom" }
+
+    let viewModel: ChatViewModel
+    let inputFocused: FocusState<Bool>.Binding
+    let openDocument: (DocumentFile) -> Void
+    let selectText: (String) -> Void
+    let showImage: (UIImage) -> Void
+    @ViewBuilder let emptyState: () -> EmptyState
+
+    @Environment(AppSettings.self) private var settings
+    /// Kullanıcı yukarı kaydırınca akış onu aşağı çekmez; en alta dönünce takip sürer.
+    @State private var followsBottom = true
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    ForEach(viewModel.items) { item in
+                        row(item)
+                    }
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomID)
+                        .onAppear { followsBottom = true }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            }
+            .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
+            // Mesajların üzerine dokununca klavye kapanır (linkler çalışmaya devam eder).
+            .simultaneousGesture(TapGesture().onEnded { inputFocused.wrappedValue = false })
+            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { value in
+                if value.translation.height > 0 { followsBottom = false }
+            })
+            .overlay {
+                if viewModel.items.isEmpty {
+                    emptyState()
+                }
+            }
+            .onChange(of: viewModel.items.count) {
+                followsBottom = true
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
+            .onChange(of: viewModel.items.last?.text) {
+                if followsBottom {
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    /// Satır, sadece kendi verisi değiştiğinde yeniden çizilir.
+    @ViewBuilder
+    private func row(_ item: ChatItem) -> some View {
+        let isLast = item.id == viewModel.items.last?.id
+        let variant = viewModel.variantPosition(of: item)
+        let canEdit = viewModel.canEdit(item)
+        let canRegenerate = isLast && viewModel.canRegenerate
+        let isStreaming = viewModel.isStreaming
+        MessageRow(key: MessageRowKey(
+            item: item,
+            isStreaming: isStreaming,
+            isLast: isLast,
+            canEdit: canEdit,
+            canRegenerate: canRegenerate,
+            variantCurrent: variant?.current,
+            variantCount: variant?.count
+        )) {
+            switch item.role {
+            case .user:
+                UserMessage(
+                    text: item.text,
+                    attachments: item.attachments ?? [],
+                    showImage: showImage,
+                    edit: canEdit ? {
+                        viewModel.beginEditing(item)
+                        inputFocused.wrappedValue = true
+                    } : nil,
+                    variant: variant,
+                    showVariant: { viewModel.showVariant($0, at: item) },
+                    isStreaming: isStreaming
+                )
+            case .assistant:
+                AssistantMessage(
+                    item: item,
+                    isStreaming: isStreaming && isLast,
+                    openDocument: openDocument,
+                    selectText: selectText,
+                    showImage: showImage,
+                    regenerate: canRegenerate ? { modelID in
+                        if let modelID {
+                            viewModel.clearModelOverride()
+                            settings.select(modelID)
+                        }
+                        viewModel.regenerate(using: settings)
+                    } : nil,
+                    variant: variant,
+                    showVariant: { viewModel.showVariant($0, at: item) }
+                )
+            }
+        }
+        .equatable()
+        .id(item.id)
+    }
+}
+
+/// Satırın görünümünü belirleyen veriler.
+private struct MessageRowKey: Equatable, Sendable {
+    let item: ChatItem
+    let isStreaming: Bool
+    let isLast: Bool
+    let canEdit: Bool
+    let canRegenerate: Bool
+    let variantCurrent: Int?
+    let variantCount: Int?
+}
+
+private struct MessageRow<Content: View>: View, Equatable {
+    let key: MessageRowKey
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+    }
+
+    nonisolated static func == (lhs: MessageRow, rhs: MessageRow) -> Bool {
+        lhs.key == rhs.key
+    }
+}
+
+/// Akarken bitmiş bloklar bir kez işlenir; sadece yazılmakta olan kısım her güncellemede çizilir.
+private struct StreamingMarkdown: View {
+    let text: String
+
+    var body: some View {
+        let parts = MarkdownStream.split(text)
+        VStack(alignment: .leading, spacing: 8) {
+            if !parts.stable.isEmpty {
+                FinishedMarkdown(text: parts.stable)
+                    .equatable()
+            }
+            if !parts.tail.isEmpty {
+                Text(parts.tail)
+                    .foregroundStyle(Palette.text)
+            }
+        }
+    }
+}
+
+private struct FinishedMarkdown: View, Equatable {
+    let text: String
+
+    var body: some View {
+        Markdown(text)
+            .markdownTheme(.atomOneDark)
+    }
+
+    nonisolated static func == (lhs: FinishedMarkdown, rhs: FinishedMarkdown) -> Bool {
+        lhs.text == rhs.text
+    }
+}
+
+/// Gönder/durdur düğmesi. Metni burada okur; yazarken ekranın geri kalanı yenilenmez.
+private struct SendControl: View {
+    let viewModel: ChatViewModel
+    let send: () -> Void
+
+    var body: some View {
+        if viewModel.isStreaming {
+            Button {
+                viewModel.stop()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.background)
+                    .frame(width: 32, height: 32)
+                    .background(Palette.textBright, in: .circle)
+            }
+            .accessibilityLabel(L("Stop", "Durdur"))
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Palette.background)
+                    .frame(width: 32, height: 32)
+                    .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
+            }
+            .disabled(!viewModel.canSend)
+            .accessibilityLabel(L("Send", "Gönder"))
+        }
+    }
+}
+
+/// "Metni komut olarak kaydet"; kutuda metin varsa görünür.
+private struct SavePromptButton: View {
+    let viewModel: ChatViewModel
+    let save: (String) -> Void
+
+    var body: some View {
+        if !viewModel.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Divider()
+            Button(L("Save Text as Prompt", "Metni komut olarak kaydet"), systemImage: "plus") {
+                save(viewModel.input)
+            }
+        }
     }
 }

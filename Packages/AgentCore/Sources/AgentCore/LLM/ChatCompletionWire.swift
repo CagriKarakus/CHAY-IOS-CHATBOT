@@ -10,7 +10,7 @@ struct ChatCompletionRequest: Encodable {
     let reasoningEffort: ReasoningEffort?
     let maxToolCalls: Int?
     /// Streaming'de son parçada token kullanımını ister.
-    let streamOptions = StreamOptions()
+    let streamOptions: StreamOptions?
 
     struct StreamOptions: Encodable {
         let include_usage = true
@@ -141,6 +141,17 @@ public struct ToolDefinition: Encodable, Equatable, Sendable {
 struct ChatCompletionChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
+            /// Mistral gibi sunucularda `content` metin yerine parça dizisi olabilir.
+            private struct ContentPart: Decodable {
+                let type: String?
+                let text: String?
+                let thinking: [ContentPart]?
+
+                var plainText: String {
+                    text ?? (thinking ?? []).map(\.plainText).joined()
+                }
+            }
+
             /// Sağlayıcının aramasından gelen kaynak (`type: "url_citation"`).
             struct Annotation: Decodable {
                 struct Citation: Decodable {
@@ -151,10 +162,27 @@ struct ChatCompletionChunk: Decodable {
             }
 
             let content: String?
+            /// `content` dizisindeki düşünme parçaları.
+            let contentThinking: String?
             let reasoning: String?
             let reasoningContent: String?
             let toolCalls: [ToolCallDelta]?
             let annotations: [Annotation]?
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                reasoning = try? container.decodeIfPresent(String.self, forKey: .reasoning)
+                reasoningContent = try? container.decodeIfPresent(String.self, forKey: .reasoningContent)
+                toolCalls = try? container.decodeIfPresent([ToolCallDelta].self, forKey: .toolCalls)
+                annotations = try? container.decodeIfPresent([Annotation].self, forKey: .annotations)
+                if let parts = try? container.decodeIfPresent([ContentPart].self, forKey: .content) {
+                    content = parts.filter { $0.type != "thinking" }.map(\.plainText).joined()
+                    contentThinking = parts.filter { $0.type == "thinking" }.map(\.plainText).joined()
+                } else {
+                    content = try? container.decodeIfPresent(String.self, forKey: .content)
+                    contentThinking = nil
+                }
+            }
 
             enum CodingKeys: String, CodingKey {
                 case content, reasoning, annotations
@@ -175,6 +203,7 @@ struct ChatCompletionChunk: Decodable {
             }
         }
         let delta: Delta?
+        let finish_reason: String?
     }
     struct Usage: Decodable {
         struct ServerToolUse: Decodable {
@@ -189,7 +218,8 @@ struct ChatCompletionChunk: Decodable {
             (server_tool_use_details ?? server_tool_use)?.web_search_requests
         }
     }
-    let choices: [Choice]
+    /// Bazı sunucular sadece kullanım veya durum bildiren, `choices` içermeyen parçalar gönderir.
+    let choices: [Choice]?
     let usage: Usage?
 }
 
@@ -204,9 +234,24 @@ struct ToolCallDelta: Decodable {
     let function: Function?
 }
 
+/// `{"error": {"message": ...}}` veya `{"error": "metin"}`.
 struct APIErrorBody: Decodable {
-    struct Detail: Decodable {
+    private struct Detail: Decodable {
         let message: String?
     }
-    let error: Detail
+
+    private enum CodingKeys: String, CodingKey {
+        case error
+    }
+
+    let message: String?
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let text = try? container.decode(String.self, forKey: .error) {
+            message = text
+        } else {
+            message = try container.decode(Detail.self, forKey: .error).message
+        }
+    }
 }

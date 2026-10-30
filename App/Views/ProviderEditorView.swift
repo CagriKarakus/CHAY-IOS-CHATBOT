@@ -18,6 +18,8 @@ struct ProviderEditorView: View {
     @State private var confirmingDelete = false
     /// Ek HTTP başlıkları (ad, değer); sıralı düzenleme için dizi.
     @State private var headers: [HeaderField] = []
+    /// Model ayarından dönünce `onAppear` tekrar çalışır; taslak sadece ilk açılışta yüklenir.
+    @State private var loaded = false
 
     private var selectedPreset: ProviderPreset? {
         ProviderPreset.preset(id: draft.preset)
@@ -188,6 +190,8 @@ struct ProviderEditorView: View {
             }
         }
         .onAppear {
+            guard !loaded else { return }
+            loaded = true
             if let provider {
                 draft = provider
                 apiKey = settings.apiKey(for: provider.id)

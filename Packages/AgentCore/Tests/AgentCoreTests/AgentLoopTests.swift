@@ -47,9 +47,12 @@ private struct EchoTool: Tool {
 @Test func lastStepOffersNoTools() async throws {
     let alwaysCalls = toolCallLines(id: "c", name: "echo", arguments: "{}")
     let transport = ScriptedTransport([alwaysCalls, alwaysCalls, alwaysCalls])
-    let loop = AgentLoop(client: LLMClient(configuration: try makeConfiguration(), transport: transport), tools: [EchoTool()], maxSteps: 2)
+    let loop = AgentLoop(client: LLMClient(configuration: try makeConfiguration(), transport: transport), tools: [EchoTool()], maxSteps: 2, retryDelays: [])
 
-    _ = try await collect(loop.run([ChatMessage(role: .user, content: "Selam")]))
+    // Son adımda araç çalıştırılamaz; model yine sadece araç isterse cevap boş kalır.
+    await #expect(throws: LLMError.emptyResponse(reason: "tool_calls")) {
+        try await collect(loop.run([ChatMessage(role: .user, content: "Selam")]))
+    }
 
     #expect(transport.requests.count == 2)
     #expect(try transport.body(of: 0)["tools"] != nil)
@@ -59,7 +62,7 @@ private struct EchoTool: Tool {
 @Test func toolErrorsGoBackToModel() async throws {
     let transport = ScriptedTransport([
         toolCallLines(id: "c1", name: "echo", arguments: "{}"),
-        ["data: [DONE]"],
+        [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"],
     ])
     let loop = AgentLoop(client: LLMClient(configuration: try makeConfiguration(), transport: transport), tools: [EchoTool(fails: true)])
 
@@ -72,7 +75,7 @@ private struct EchoTool: Tool {
 @Test func unknownToolIsReported() async throws {
     let transport = ScriptedTransport([
         toolCallLines(id: "c1", name: "rm_rf", arguments: "{}"),
-        ["data: [DONE]"],
+        [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"],
     ])
     let loop = AgentLoop(client: LLMClient(configuration: try makeConfiguration(), transport: transport), tools: [EchoTool()])
 

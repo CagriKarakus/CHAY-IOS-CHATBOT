@@ -4,6 +4,8 @@ import SwiftUI
 /// Claude tarzı kenar menüsü: arama, Projeler, Dokümanlar, sabitlenen ve son sohbetler; altta Ayarlar ve Yeni sohbet.
 struct SidebarView<ChatMenu: View>: View {
     let currentID: UUID?
+    /// Cevap yazılırken başka sohbete geçilemez.
+    let isBusy: Bool
     let openChat: (ConversationRecord) -> Void
     let openProjects: () -> Void
     let openProject: (ProjectRecord) -> Void
@@ -108,6 +110,8 @@ struct SidebarView<ChatMenu: View>: View {
                         .frame(height: 52)
                         .background(Palette.textBright, in: .capsule)
                 }
+                .disabled(isBusy)
+                .opacity(isBusy ? 0.5 : 1)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
@@ -175,6 +179,8 @@ struct SidebarView<ChatMenu: View>: View {
                 .background(record.id == currentID ? Palette.elevated : .clear, in: .rect(cornerRadius: 14))
                 .contentShape(.rect)
         }
+        .disabled(isBusy)
+        .opacity(isBusy && record.id != currentID ? 0.5 : 1)
         .padding(.leading, indented ? 44 : 0)
         .contextMenu {
             chatMenu(record)

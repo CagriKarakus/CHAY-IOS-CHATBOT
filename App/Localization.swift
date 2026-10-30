@@ -84,6 +84,12 @@ func localizedDescription(of error: LLMError) -> String {
         L("No API key entered.", "API key girilmemiş.")
     case .missingModel:
         L("No model selected. Add a model in Settings.", "Model seçilmemiş. Ayarlar'dan bir model ekle.")
+    case .emptyResponse(reason: "content_filter"):
+        L("The provider's content filter blocked this reply. Try rewording or another model.",
+          "Sağlayıcının içerik filtresi bu cevabı engelledi. Farklı ifade etmeyi veya başka bir modeli dene.")
+    case .emptyResponse:
+        L("The model returned an empty reply. Try again or use another model.",
+          "Model boş cevap döndürdü. Tekrar dene veya başka bir model kullan.")
     case let .http(403, message?):
         // Ör. Evren'de kullanım şartları onaylanmamışsa sunucunun açıklaması gösterilir.
         L("Access denied: \(message)", "Erişim reddedildi: \(message)")

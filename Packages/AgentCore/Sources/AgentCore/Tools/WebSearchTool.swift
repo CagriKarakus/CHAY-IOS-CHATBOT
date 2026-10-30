@@ -27,7 +27,7 @@ public enum SearchBackend: Equatable, Sendable {
 public struct WebSearchTool: Tool {
     private struct Arguments: Decodable {
         let query: String
-        let max_results: Int?
+        let max_results: LenientInt?
     }
 
     struct Result: Equatable {
@@ -89,7 +89,7 @@ public struct WebSearchTool: Tool {
     public func run(arguments: String) async throws -> ToolOutput {
         let arguments = try decodeArguments(Arguments.self, from: arguments)
         let query = arguments.query
-        let maxResults = (arguments.max_results ?? defaultMaxResults).clamped(to: Self.resultLimit)
+        let maxResults = (arguments.max_results?.value ?? defaultMaxResults).clamped(to: Self.resultLimit)
 
         var used = backend
         var note = ""

@@ -65,7 +65,12 @@ final class ConversationRecord {
     }
 
     var content: ConversationContent {
-        (try? JSONDecoder().decode(ConversationContent.self, from: contentData)) ?? ConversationContent(items: [], history: [])
+        (try? decodedContent()) ?? ConversationContent(items: [], history: [])
+    }
+
+    /// Çözülemeyen sohbet boş sayılmamalı: açılırsa bir sonraki kayıt gerçek verinin üzerine yazar.
+    func decodedContent() throws -> ConversationContent {
+        try JSONDecoder().decode(ConversationContent.self, from: contentData)
     }
 
     func update(_ content: ConversationContent) {

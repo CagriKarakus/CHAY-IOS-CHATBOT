@@ -85,7 +85,7 @@ private let webResult = ChatMessage(role: .tool, content: "<untrusted_content so
 private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, store: InMemoryNoteStore) async throws -> [AgentEvent] {
     let transport = ScriptedTransport([
         toolCallLines(id: "n1", name: "save_note", arguments: #"{"content":"Kullanıcı kedi seviyor."}"#),
-        ["data: [DONE]"],
+        [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"],
     ])
     let loop = AgentLoop(
         client: LLMClient(configuration: try makeConfiguration(), transport: transport),
@@ -129,7 +129,7 @@ private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, sto
 
 @Test func plainToolsNeverAskApproval() async throws {
     let approver = ApprovalRecorder(answer: false)
-    let transport = ScriptedTransport([toolCallLines(id: "r1", name: "read_notes", arguments: "{}"), ["data: [DONE]"]])
+    let transport = ScriptedTransport([toolCallLines(id: "r1", name: "read_notes", arguments: "{}"), [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"]])
     let loop = AgentLoop(
         client: LLMClient(configuration: try makeConfiguration(), transport: transport),
         tools: [ReadNotesTool(store: InMemoryNoteStore(["A"]))],

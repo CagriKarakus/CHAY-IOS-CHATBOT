@@ -27,6 +27,20 @@ public struct ServerTools: Equatable, Sendable {
     )
 }
 
+/// Bazı sunucuların reddettiği isteğe bağlı istek alanları.
+public enum OptionalParameter: Sendable, CaseIterable {
+    case streamOptions, reasoningEffort, maxToolCalls
+
+    /// Hata mesajında geçince bu alanın reddedildiği anlaşılır.
+    var errorKeyword: String {
+        switch self {
+        case .streamOptions: "stream_options"
+        case .reasoningEffort: "reasoning"
+        case .maxToolCalls: "max_tool_calls"
+        }
+    }
+}
+
 /// OpenAI-uyumlu bir endpoint'e bağlanmak için gereken ayarlar.
 public struct LLMConfiguration: Equatable, Sendable {
     public let baseURL: URL
@@ -38,6 +52,8 @@ public struct LLMConfiguration: Equatable, Sendable {
     public let extraHeaders: [String: String]
     /// Sağlayıcının yerleşik araçları; `nil` ise sadece yerel araçlar kullanılır.
     public var serverTools: ServerTools?
+    /// Sunucu reddettiği için istekte gönderilmeyen alanlar.
+    var omittedParameters: Set<OptionalParameter> = []
 
     /// Değerleri temizler ve doğrular. Sadece HTTPS kabul edilir.
     public init(

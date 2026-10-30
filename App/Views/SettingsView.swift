@@ -175,12 +175,15 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L("Done", "Bitti")) {
-                        settings.saveTavilyKey(tavilyKey)
-                        settings.saveSearch(provider: searchProvider, braveKey: braveKey, searxngURL: searxngURL)
                         dismiss()
                     }
                     .fontWeight(.semibold)
                 }
+            }
+            // Ayarlar aşağı kaydırılarak kapatılsa da yazılanlar kaybolmasın.
+            .onDisappear {
+                settings.saveTavilyKey(tavilyKey)
+                settings.saveSearch(provider: searchProvider, braveKey: braveKey, searxngURL: searxngURL)
             }
             .onAppear {
                 tavilyKey = settings.tavilyKey

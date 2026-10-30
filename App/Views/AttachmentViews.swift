@@ -225,13 +225,26 @@ struct GeneratedImageView: View {
     let name: String
     let show: (UIImage) -> Void
     @State private var saved = false
+    @State private var image: UIImage?
+    @State private var missing = false
 
     private var url: URL {
         DocumentFile.directory.appendingPathComponent(name)
     }
 
     var body: some View {
-        if let image = UIImage(contentsOfFile: url.path) {
+        content
+            // Görsel bir kez arka planda okunur; ekran her yenilendiğinde diskten okunmaz.
+            .task(id: name) {
+                let path = url.path
+                image = await Task.detached(priority: .userInitiated) { UIImage(contentsOfFile: path) }.value
+                missing = image == nil
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let image {
             VStack(alignment: .leading, spacing: 6) {
                 Image(uiImage: image)
                     .resizable()
@@ -252,10 +265,13 @@ struct GeneratedImageView: View {
                         .foregroundStyle(Palette.green)
                 }
             }
-        } else {
+        } else if missing {
             Label(L("Image not found", "Görsel bulunamadı"), systemImage: "photo")
                 .font(.footnote)
                 .foregroundStyle(Palette.textMuted)
+        } else {
+            ProgressView()
+                .tint(Palette.textMuted)
         }
     }
 

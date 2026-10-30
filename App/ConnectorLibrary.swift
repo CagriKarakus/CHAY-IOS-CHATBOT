@@ -72,6 +72,8 @@ final class ConnectorLibrary {
     /// Son bağlantı hatası (Ayarlar'da gösterilir).
     private(set) var lastErrors: [UUID: String] = [:]
     private var clients: [UUID: MCPClient] = [:]
+    /// Araç listesi alınamayan bağlayıcılar: bir süre yeniden denenmez, her mesajı bekletmesin.
+    private var refreshFailures: [UUID: Date] = [:]
     private let authenticator = WebAuthenticator()
 
     private static var fileURL: URL {
@@ -127,6 +129,7 @@ final class ConnectorLibrary {
         }
         clients[connector.id] = nil
         lastErrors[connector.id] = nil
+        refreshFailures[connector.id] = nil
         persist()
     }
 
@@ -258,7 +261,7 @@ final class ConnectorLibrary {
         var taken = Set<String>()
         for connector in active(in: selection) {
             if connector.tools.isEmpty {
-                _ = try? await refreshTools(connector.id)
+                await refreshBriefly(connector.id)
             }
             guard let current = self.connector(connector.id), let client = try? client(for: current.id) else { continue }
             for info in current.enabledTools {
@@ -269,6 +272,19 @@ final class ConnectorLibrary {
             }
         }
         return tools
+    }
+
+    /// Mesaj gönderilirken araç listesi alır: en fazla 5 saniye bekler, başarısızsa 5 dakika denemez.
+    private func refreshBriefly(_ id: UUID) async {
+        if let failure = refreshFailures[id], Date.now.timeIntervalSince(failure) < 300 { return }
+        let work = Task { _ = try? await refreshTools(id) }
+        let limit = Task {
+            try? await Task.sleep(for: .seconds(5))
+            work.cancel()
+        }
+        await work.value
+        limit.cancel()
+        refreshFailures[id] = connector(id)?.tools.isEmpty == false ? nil : .now
     }
 
     private func client(for id: UUID) throws -> MCPClient {

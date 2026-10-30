@@ -34,7 +34,9 @@ extension Tool {
     /// Model argümanlarını aracın beklediği tipe çevirir.
     func decodeArguments<T: Decodable>(_ type: T.Type, from arguments: String) throws -> T {
         do {
-            return try JSONDecoder().decode(T.self, from: Data(arguments.utf8))
+            // Argümansız çağrılarda bazı modeller boş metin gönderir.
+            let json = arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{}" : arguments
+            return try JSONDecoder().decode(T.self, from: Data(json.utf8))
         } catch {
             throw ToolError.invalidArguments
         }
@@ -44,6 +46,24 @@ extension Tool {
 /// Hatanın, modelin sorunu anlamasına yarayan ham sunucu yanıtı. Güvenilmez veridir; işaretlenerek gösterilir.
 public protocol ServerDetailError: Error {
     var serverDetail: String? { get }
+}
+
+/// Model `3` yerine `"3"` veya `3.0` yazsa da okunan tam sayı.
+struct LenientInt: Decodable {
+    let value: Int
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let number = try? container.decode(Int.self) {
+            value = number
+        } else if let number = try? container.decode(Double.self) {
+            value = Int(number)
+        } else if let number = Int(try container.decode(String.self).trimmingCharacters(in: .whitespaces)) {
+            value = number
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Not a number")
+        }
+    }
 }
 
 public struct ToolOutput: Equatable, Sendable {

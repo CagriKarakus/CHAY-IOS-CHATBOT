@@ -6,7 +6,7 @@ import UIKit
 
 /// Ekrandaki bir mesaj. Asistan mesajı, bir istekteki tüm adımları (araçlar + cevap) toplar.
 /// Yeni alanlar opsiyonel olmalı ki eski kayıtlı sohbetler açılabilsin.
-struct ChatItem: Identifiable, Codable {
+struct ChatItem: Identifiable, Codable, Equatable {
     enum Role: String, Codable {
         case user, assistant
     }
@@ -32,6 +32,26 @@ struct ChatItem: Identifiable, Codable {
     var preparing: PreparingTool?
     /// Cevabın üstünde gösterilen not (ör. token limiti dolduğu için yedek modelin kullanıldığı).
     var notice: String?
+}
+
+extension ChatItem {
+    /// Varsayılan değerli alanlar eksikse de okunur; yeni alan eklemek eski sohbetleri bozmasın.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        role = try container.decode(Role.self, forKey: .role)
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        activities = try container.decodeIfPresent([ToolActivity].self, forKey: .activities) ?? []
+        sources = try container.decodeIfPresent([Source].self, forKey: .sources) ?? []
+        files = try container.decodeIfPresent([String].self, forKey: .files) ?? []
+        usage = try container.decodeIfPresent(TokenUsage.self, forKey: .usage)
+        stopped = try container.decodeIfPresent(Bool.self, forKey: .stopped)
+        attachments = try container.decodeIfPresent([AttachmentPreview].self, forKey: .attachments)
+        images = try container.decodeIfPresent([String].self, forKey: .images)
+        reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+        preparing = try container.decodeIfPresent(PreparingTool.self, forKey: .preparing)
+        notice = try container.decodeIfPresent(String.self, forKey: .notice)
+    }
 }
 
 /// Bir noktadan sonraki alternatif devamlar; yeniden üretme veya mesaj düzenleme ile oluşur.
@@ -95,7 +115,7 @@ struct PendingAttachment: Identifiable {
     let preview: AttachmentPreview
 }
 
-struct ToolActivity: Identifiable, Codable {
+struct ToolActivity: Identifiable, Codable, Equatable {
     enum State: String, Codable {
         case running, done, failed
     }
@@ -120,7 +140,13 @@ final class ChatViewModel {
     /// Özetlenmeden korunan son kullanıcı turu sayısı.
     private static let keptTurns = 2
 
-    private(set) var items: [ChatItem] = []
+    private(set) var items: [ChatItem] = [] {
+        didSet {
+            if hasMessages == items.isEmpty { hasMessages = !items.isEmpty }
+        }
+    }
+    /// Araç çubuğu bunu okur; `items`'ı okusaydı her akış güncellemesinde ekranın tamamı yenilenirdi.
+    private(set) var hasMessages = false
     private(set) var isStreaming = false
     private(set) var pendingApproval: PendingApproval?
     /// Limiti dolan model için kullanıcıdan yedek bekleniyor.
@@ -182,6 +208,10 @@ final class ChatViewModel {
     private var turnFallbackCount: Int?
     /// Henüz `.message` olarak gelmemiş, akmakta olan adımın metni (durdurulursa geçmişe eklenir).
     private var pendingStepText = ""
+    /// Henüz ekrana yazılmamış akış metni; ekran saniyede 12 kez güncellenir, her token'da değil.
+    private var bufferedText = ""
+    private var bufferedReasoning = ""
+    private var flushTask: Task<Void, Never>?
     private var turnTask: Task<Void, Never>?
     private var approvalContinuation: CheckedContinuation<Bool, Never>?
     private var connectorSetupContinuation: CheckedContinuation<ConnectorSetupResult, Never>?
@@ -200,15 +230,36 @@ final class ChatViewModel {
         !isStreaming && !isReadingDocument && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
     }
 
-    func addImage(_ data: Data) {
-        guard let prepared = preparedImage(from: data) else {
+    func addImage(_ data: Data) async {
+        // Küçültme ve dosya yazma arka planda: büyük fotoğraflar ekranı dondurmasın.
+        let prepared = await Task.detached(priority: .userInitiated) { () -> (jpeg: Data, thumbnail: Data, file: String?)? in
+            guard let image = preparedImage(from: data) else { return nil }
+            return (image.jpeg, image.thumbnail, AttachmentFiles.save(image.jpeg))
+        }.value
+        guard let prepared else {
             errorMessage = L("Couldn't read the image.", "Görsel okunamadı.")
             return
         }
         pendingAttachments.append(PendingAttachment(
             attachment: Attachment(kind: .image, mimeType: "image/jpeg", data: prepared.jpeg),
-            preview: AttachmentPreview(kind: .image, thumbnail: prepared.thumbnail, duration: nil, file: AttachmentFiles.save(prepared.jpeg))
+            preview: AttachmentPreview(kind: .image, thumbnail: prepared.thumbnail, duration: nil, file: prepared.file)
         ))
+    }
+
+    /// Kestirme yeni sohbet açarken kullanıcının taslağını kenara alır; ona eklenmesin.
+    func setAsideDraft() -> (input: String, attachments: [PendingAttachment]) {
+        defer {
+            input = ""
+            pendingAttachments = []
+        }
+        return (input, pendingAttachments)
+    }
+
+    /// Kenara alınan taslağı geri koyar. İstek gönderilemediyse (ör. limit sorusu) kutudaki istek ezilmez.
+    func restoreDraft(_ draft: (input: String, attachments: [PendingAttachment])) {
+        guard input.isEmpty, pendingAttachments.isEmpty else { return }
+        input = draft.input
+        pendingAttachments = draft.attachments
     }
 
     /// PDF/metin dosyasından çıkarılan metni ekler; çok uzunsa kırpılır.
@@ -269,6 +320,8 @@ final class ChatViewModel {
         conversationID = nil
         errorMessage = nil
         fallbackPromptProviderID = nil
+        limitPrompt = nil
+        resumeOnForeground = false
         isIncognito = incognito
         projectID = incognito ? nil : project?.id
         projectName = incognito ? nil : project?.name
@@ -484,7 +537,11 @@ final class ChatViewModel {
 
     func open(_ record: ConversationRecord) {
         guard !isStreaming else { return }
-        let content = record.content
+        guard let content = try? record.decodedContent() else {
+            errorMessage = L("This chat couldn't be read, so it wasn't opened. Its data is unchanged.",
+                             "Bu sohbet okunamadığı için açılmadı. Verileri değişmedi.")
+            return
+        }
         items = content.items.map { item in
             var item = item
             // Uygulama istek ortasında kapandıysa yarım kalan araçlar başarısız sayılır.
@@ -505,7 +562,15 @@ final class ChatViewModel {
         projectName = record.projectID.flatMap { id in context.flatMap { ProjectRecord.find(id, in: $0)?.name } }
         isIncognito = false
         modelOverrideID = content.modelID
-        errorMessage = nil
+        editingItemID = nil
+        limitPrompt = nil
+        fallbackPromptProviderID = nil
+        resumeOnForeground = false
+        // Uygulama cevap sırasında kapandıysa soru cevapsız kalır; Tekrar dene görünsün.
+        let unanswered = history.last.map { $0.role == .user || $0.role == .tool } == true
+        errorMessage = unanswered && items.last?.stopped != true
+            ? L("This reply wasn't finished.", "Bu cevap tamamlanmadı.")
+            : nil
     }
 
     /// Devam eden cevabı hemen keser.
@@ -515,6 +580,9 @@ final class ChatViewModel {
         isInBackground = true
         if isStreaming {
             backgroundedDuringTurn = true
+            // iOS uygulamayı kapatırsa o ana kadarki adımlar kaybolmasın.
+            if let id = items.last?.id { flushBuffers(id) }
+            persist()
             // Devam eden arka plan görevi varsa iOS ilerlemeyi gösterir; "uygulamayı aç" uyarısı gerekmez.
             if continuedTurn == nil {
                 TurnNotifications.scheduleStillRunning()
@@ -638,6 +706,13 @@ final class ChatViewModel {
             TurnNotifications.cancelStillRunning()
         }
         backgroundedDuringTurn = false
+        // Bağlantı hatası uygulamaya dönüldükten sonra geldiyse dönüş anındaki devam etme kaçmıştır.
+        if resumeOnForeground, !isInBackground {
+            resumeOnForeground = false
+            Task { @MainActor in
+                if let settings = lastSettings, canRetry { retry(using: settings) }
+            }
+        }
     }
 
     func stop() {
@@ -818,6 +893,7 @@ final class ChatViewModel {
         guard canRetry, resolveTurnModel(for: .retry, using: settings) else { return }
         errorMessage = nil
         fallbackPromptProviderID = nil
+        discardUnfinishedReply()
         if settings.selection(for: turnModelID)?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
             generateImage(prompt: prompt, using: settings)
         } else {
@@ -948,6 +1024,7 @@ final class ChatViewModel {
                     handleFailure(error)
                 }
             }
+            flushBuffers(reply.id)
             if let index = items.firstIndex(where: { $0.id == reply.id }) {
                 items[index].preparing = nil
                 if items[index].text.isEmpty, items[index].activities.isEmpty, items[index].stopped != true {
@@ -993,17 +1070,71 @@ final class ChatViewModel {
         }
     }
 
+    /// Biriken akış metnini ekrana yazar.
+    private func flushBuffers(_ id: ChatItem.ID) {
+        flushTask?.cancel()
+        flushTask = nil
+        guard !bufferedText.isEmpty || !bufferedReasoning.isEmpty,
+              let index = items.firstIndex(where: { $0.id == id })
+        else { return }
+        if !bufferedText.isEmpty {
+            items[index].text += bufferedText
+            items[index].preparing = nil
+            bufferedText = ""
+        }
+        if !bufferedReasoning.isEmpty {
+            items[index].reasoning = (items[index].reasoning ?? "") + bufferedReasoning
+            bufferedReasoning = ""
+        }
+    }
+
+    private func scheduleFlush(_ id: ChatItem.ID) {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            self?.flushBuffers(id)
+        }
+    }
+
+    /// Tamamlanmamış cevabı yeniden denemeden önce kaldırır; aksi halde yarım ve tam cevap birlikte görünür.
+    private func discardUnfinishedReply() {
+        guard items.last?.role == .assistant else { return }
+        bufferedText = ""
+        bufferedReasoning = ""
+        if history.last?.role == .user {
+            items.removeLast()
+            pendingStepText = ""
+        } else {
+            discardPartialStep(at: items.count - 1)
+        }
+    }
+
     private func apply(_ event: AgentEvent, to id: ChatItem.ID) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         switch event {
         case let .text(delta):
-            items[index].text += delta
-            items[index].preparing = nil
+            bufferedText += delta
             pendingStepText += delta
+            scheduleFlush(id)
             continuedTurn?.advance()
+            return
         case let .reasoning(thought):
-            items[index].reasoning = (items[index].reasoning ?? "") + thought
+            bufferedReasoning += thought
+            scheduleFlush(id)
             continuedTurn?.advance()
+            return
+        default:
+            flushBuffers(id)
+        }
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        switch event {
+        case .text, .reasoning:
+            break
+        case let .replyCutOff(reason):
+            addNotice(reason == "content_filter"
+                ? L("The provider's content filter stopped this reply.", "Sağlayıcının içerik filtresi bu cevabı durdurdu.")
+                : L("This reply was cut off at the model's length limit.", "Bu cevap modelin uzunluk sınırında kesildi."),
+                at: index)
         case let .preparingTool(name, characters):
             items[index].preparing = PreparingTool(toolName: name, characters: characters)
             continuedTurn?.advance()
@@ -1053,6 +1184,10 @@ final class ChatViewModel {
             if message.role == .assistant {
                 pendingStepText = ""
             }
+            // Adım bittikçe kaydedilir: uygulama kapanırsa tamamlanan araç sonuçları kalır.
+            if message.role == .tool {
+                persist()
+            }
         case let .usage(usage):
             items[index].usage = items[index].usage.map { $0 + usage } ?? usage
             lastPromptTokens = usage.promptTokens
@@ -1093,8 +1228,9 @@ final class ChatViewModel {
             branches: branches.isEmpty ? nil : branches
         )
 
-        if let conversationID,
-           let record = try? context.fetch(FetchDescriptor<ConversationRecord>(predicate: #Predicate { $0.id == conversationID })).first {
+        if let conversationID {
+            // Kayıt bu sırada silindiyse yeniden oluşturulmaz.
+            guard let record = try? context.fetch(FetchDescriptor<ConversationRecord>(predicate: #Predicate { $0.id == conversationID })).first else { return }
             record.update(content)
         } else {
             let record = ConversationRecord(content: content)

@@ -13,6 +13,8 @@ public enum LLMStreamEvent: Equatable, Sendable {
     case usage(TokenUsage)
     /// Sağlayıcının kendi aramasından gelen kaynaklar.
     case citations([Source])
+    /// Sunucunun bildirdiği bitiş nedeni (`stop`, `length`, `content_filter`…).
+    case finished(reason: String)
 }
 
 /// OpenAI-uyumlu `/chat/completions` istemcisi (SSE streaming).
@@ -27,6 +29,19 @@ public struct LLMClient: Sendable {
 
     var serverTools: ServerTools? {
         configuration.serverTools
+    }
+
+    /// Hata bir isteğe bağlı alanın reddedildiğini söylüyorsa o alan olmadan aynı istemci; değilse `nil`.
+    func withoutRejectedParameters(after error: any Error) -> LLMClient? {
+        guard case let .http(status, message?) = error as? LLMError, status == 400 || status == 422 else { return nil }
+        let text = message.lowercased()
+        let rejected = OptionalParameter.allCases.filter {
+            text.contains($0.errorKeyword) && !configuration.omittedParameters.contains($0)
+        }
+        guard !rejected.isEmpty else { return nil }
+        var adjusted = configuration
+        adjusted.omittedParameters.formUnion(rejected)
+        return LLMClient(configuration: adjusted, transport: transport)
     }
 
     /// Aynı model, sağlayıcının yerleşik araçları olmadan.
@@ -116,8 +131,9 @@ public struct LLMClient: Sendable {
                 messages: messages.map(WireMessage.init),
                 stream: true,
                 tools: requestTools.isEmpty ? nil : requestTools,
-                reasoningEffort: configuration.reasoningEffort,
-                maxToolCalls: server?.maxToolCalls
+                reasoningEffort: configuration.omittedParameters.contains(.reasoningEffort) ? nil : configuration.reasoningEffort,
+                maxToolCalls: configuration.omittedParameters.contains(.maxToolCalls) ? nil : server?.maxToolCalls,
+                streamOptions: configuration.omittedParameters.contains(.streamOptions) ? nil : ChatCompletionRequest.StreamOptions()
             )
         )
         return HTTPRequest(
@@ -140,6 +156,7 @@ public struct LLMClient: Sendable {
         let clock = ContinuousClock()
         var firstChunk: ContinuousClock.Instant?
         var lastChunk: ContinuousClock.Instant?
+        var finishReason: String?
         do {
             lines: for try await line in transport.lines(for: try makeRequest(messages, tools: tools, useServerTools: useServerTools)) {
                 switch SSELine(line) {
@@ -149,15 +166,23 @@ public struct LLMClient: Sendable {
                     break lines
                 case let .data(json):
                     let data = Data(json.utf8)
+                    // Bazı router'lar akış içi hatayı `choices` ile birlikte gönderir.
+                    if json.contains("\"error\""), let message = apiErrorMessage(from: json) {
+                        throw LLMError.server(message: message)
+                    }
                     if let chunk = try? decoder.decode(ChatCompletionChunk.self, from: data) {
                         if let chunkUsage = chunk.usage {
                             usage = chunkUsage
                         }
-                        guard let delta = chunk.choices.first?.delta else { continue }
+                        if let reason = chunk.choices?.first?.finish_reason {
+                            if reason == "error" { throw LLMError.server(message: "The provider stopped with an error.") }
+                            finishReason = reason
+                        }
+                        guard let delta = chunk.choices?.first?.delta else { continue }
                         let now = clock.now
                         firstChunk = firstChunk ?? now
                         lastChunk = now
-                        if let thought = delta.reasoning ?? delta.reasoningContent, !thought.isEmpty {
+                        if let thought = delta.reasoning ?? delta.reasoningContent ?? delta.contentThinking, !thought.isEmpty {
                             onEvent(.reasoning(thought))
                         }
                         if let text = delta.content, !text.isEmpty {
@@ -171,8 +196,6 @@ public struct LLMClient: Sendable {
                         if let progress = toolCalls.progressUpdate() {
                             onEvent(.toolCallProgress(name: progress.name, characters: progress.characters))
                         }
-                    } else if let message = apiErrorMessage(from: json) {
-                        throw LLMError.server(message: message)
                     } else {
                         throw LLMError.invalidResponse
                     }
@@ -183,6 +206,9 @@ public struct LLMClient: Sendable {
         }
         if !toolCalls.isEmpty {
             onEvent(.toolCalls(toolCalls.calls))
+        }
+        if let finishReason {
+            onEvent(.finished(reason: finishReason))
         }
         if let usage {
             let seconds = firstChunk.flatMap { first in lastChunk.map { ($0 - first).seconds } }
@@ -203,10 +229,10 @@ public struct LLMClient: Sendable {
         return redacted(String(body.prefix(300)))
     }
 
-    /// `{"error": {"message": ...}}` biçimindeki mesaj.
+    /// `{"error": ...}` biçimindeki mesaj.
     private func apiErrorMessage(from json: String) -> String? {
         guard let decoded = try? JSONDecoder().decode(APIErrorBody.self, from: Data(json.utf8)),
-              let message = decoded.error.message
+              let message = decoded.message
         else { return nil }
         return redacted(message)
     }
@@ -221,9 +247,14 @@ public struct LLMClient: Sendable {
     }
 }
 
-/// Parça parça gelen araç çağrılarını `index`'e göre birleştirir.
+/// Parça parça gelen araç çağrılarını birleştirir. Normalde `index` belirleyicidir; Gemini gibi `index`
+/// göndermeyen veya hep 0 gönderen sunucularda farklı `id` yeni çağrı demektir.
 private struct ToolCallAccumulator {
     private var parts: [Int: (id: String?, name: String, arguments: String)] = [:]
+    /// Sunucunun `index`'inin karşılık geldiği parça (aynı `index` farklı `id` ile geldiyse değişir).
+    private var slots: [Int: Int] = [:]
+    /// Son güncellenen parça; `index` ve `id` taşımayan devam parçaları buna eklenir.
+    private var current = 0
 
     var isEmpty: Bool { parts.isEmpty }
 
@@ -238,12 +269,20 @@ private struct ToolCallAccumulator {
     }
 
     mutating func add(_ delta: ToolCallDelta) {
-        let index = delta.index ?? 0
-        var part = parts[index] ?? (id: nil, name: "", arguments: "")
-        if let id = delta.id, !id.isEmpty { part.id = id }
-        part.name += delta.function?.name ?? ""
+        var slot = delta.index.map { slots[$0] ?? $0 } ?? current
+        let id = delta.id.flatMap { $0.isEmpty ? nil : $0 }
+        // Aynı yuvaya başka bir kimlik geldi: bu ayrı bir çağrı.
+        if let id, let existing = parts[slot]?.id, existing != id {
+            slot = (parts.keys.max() ?? -1) + 1
+            if let index = delta.index { slots[index] = slot }
+        }
+        var part = parts[slot] ?? (id: nil, name: "", arguments: "")
+        if let id { part.id = id }
+        // Bazı router'lar adı her parçada tekrar gönderir.
+        if let name = delta.function?.name, name != part.name { part.name += name }
         part.arguments += delta.function?.arguments ?? ""
-        parts[index] = part
+        parts[slot] = part
+        current = slot
     }
 
     var calls: [ToolCall] {

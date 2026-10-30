@@ -704,7 +704,7 @@ private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
     #expect(events.filter { if case .modelSwitched = $0 { true } else { false } }.count == 2)
     #expect(last.requests.count == 1)
 
-    let allBusy = AgentLoop(client: try llmClient(busy), tools: [], fallbacks: [chain[0]])
+    let allBusy = AgentLoop(client: try llmClient(busy), tools: [], fallbacks: [chain[0]], retryDelays: [])
     await #expect(throws: LLMError.http(status: 429, message: nil)) { try await collect(allBusy) }
 }
 
@@ -955,6 +955,208 @@ private final class SequenceTransport: HTTPTransport, @unchecked Sendable {
     await #expect(throws: ToolError.invalidArguments) {
         try await tool.run(arguments: "{}")
     }
+}
+
+// MARK: - Router uyumu
+
+private func toolCallChunk(_ delta: String) -> String {
+    #"data: {"choices":[{"delta":{"tool_calls":["# + delta + #"]}}]}"#
+}
+
+private func toolCalls(in events: [AgentEvent]) -> [ToolCall] {
+    events.compactMap { event -> [ToolCall]? in
+        if case let .message(message) = event, message.role == .assistant { message.toolCalls } else { nil }
+    }.first ?? []
+}
+
+private func storedAnswer(_ events: [AgentEvent]) -> String? {
+    events.compactMap { event -> String? in
+        if case let .message(message) = event, message.role == .assistant { message.content } else { nil }
+    }.last
+}
+
+private let quiet: [Duration] = []
+
+@Test func parallelToolCallsStaySeparateWithoutUsableIndex() async throws {
+    let arguments = #"{\"expression\":\"1\"}"#
+    let cases: [[String]] = [
+        // Gemini: `index` yok, her parçada tam bir çağrı.
+        [
+            toolCallChunk(#"{"id":"a","type":"function","function":{"name":"one","arguments":"\#(arguments)"}}"#),
+            toolCallChunk(#"{"id":"b","type":"function","function":{"name":"two","arguments":"\#(arguments)"}}"#),
+        ],
+        // Her çağrıda `index: 0`.
+        [
+            toolCallChunk(#"{"index":0,"id":"a","type":"function","function":{"name":"one","arguments":"\#(arguments)"}}"#),
+            toolCallChunk(#"{"index":0,"id":"b","type":"function","function":{"name":"two","arguments":"\#(arguments)"}}"#),
+        ],
+    ]
+    for lines in cases {
+        let llm = ScriptedTransport([lines + ["data: [DONE]"], doneReply])
+        let events = try await collect(AgentLoop(client: try llmClient(llm), tools: [EchoNamed("one"), EchoNamed("two")]))
+        #expect(toolCalls(in: events).map(\.function.name) == ["one", "two"])
+        #expect(toolCalls(in: events).map(\.id) == ["a", "b"])
+    }
+}
+
+@Test func toolCallNameRepeatedInEveryChunkIsNotDoubled() async throws {
+    let llm = ScriptedTransport([[
+        toolCallChunk(#"{"index":0,"id":"a","function":{"name":"one","arguments":"{\"x\""}}"#),
+        toolCallChunk(#"{"index":0,"function":{"name":"one","arguments":":1}"}}"#),
+        "data: [DONE]",
+    ], doneReply])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: [EchoNamed("one")]))
+    #expect(toolCalls(in: events).first?.function.name == "one")
+    #expect(toolCalls(in: events).first?.function.arguments == #"{"x":1}"#)
+}
+
+private struct EchoNamed: Tool {
+    let name: String
+    let description = "Echo"
+    let parameters: JSONValue = ["type": "object", "properties": [:]]
+    init(_ name: String) { self.name = name }
+    func activityDetail(for arguments: String) -> String? { nil }
+    func run(arguments: String) async throws -> ToolOutput { ToolOutput(content: "ran \(name)") }
+}
+
+@Test func streamErrorsInsideChoicesAndAsStringAreReported() async throws {
+    let inChoices = ScriptedTransport([[
+        #"data: {"error":{"code":429,"message":"Rate limited upstream"},"choices":[{"delta":{"content":""},"finish_reason":"error"}]}"#,
+    ]])
+    await #expect(throws: LLMError.server(message: "Rate limited upstream")) {
+        try await collect(AgentLoop(client: try llmClient(inChoices), tools: [], retryDelays: quiet))
+    }
+    let plain = ScriptedTransport([[#"data: {"error":"model overloaded"}"#]])
+    await #expect(throws: LLMError.server(message: "model overloaded")) {
+        try await collect(AgentLoop(client: try llmClient(plain), tools: [], retryDelays: quiet))
+    }
+    let reasonOnly = ScriptedTransport([[#"data: {"choices":[{"delta":{},"finish_reason":"error"}]}"#]])
+    await #expect(throws: LLMError.self) {
+        try await collect(AgentLoop(client: try llmClient(reasonOnly), tools: [], retryDelays: quiet))
+    }
+    // Metinde "error" kelimesi geçmesi hata sayılmaz.
+    let word = ScriptedTransport([[#"data: {"choices":[{"delta":{"content":"\"error\" kelimesi"}}]}"#, "data: [DONE]"]])
+    #expect(storedAnswer(try await collect(AgentLoop(client: try llmClient(word), tools: []))) == #""error" kelimesi"#)
+}
+
+@Test func emptyRepliesAreNotStoredAndCutOffsAreReported() async throws {
+    let filtered = ScriptedTransport([[#"data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}"#, "data: [DONE]"]])
+    await #expect(throws: LLMError.emptyResponse(reason: "content_filter")) {
+        try await collect(AgentLoop(client: try llmClient(filtered), tools: [], retryDelays: quiet))
+    }
+
+    let backup = ScriptedTransport([doneReply])
+    let silent = ScriptedTransport([["data: [DONE]"]])
+    let recovered = try await collect(AgentLoop(client: try llmClient(silent), tools: [],
+                                                fallbacks: [FallbackModel(id: UUID(), name: "yedek", client: try llmClient(backup))]))
+    #expect(storedAnswer(recovered) == "ok")
+
+    let long = ScriptedTransport([[#"data: {"choices":[{"delta":{"content":"yarım"},"finish_reason":"length"}]}"#, "data: [DONE]"]])
+    #expect(try await collect(AgentLoop(client: try llmClient(long), tools: [])).contains(.replyCutOff(reason: "length")))
+}
+
+@Test func invalidToolArgumentsDontRunAndAreNotReplayed() async throws {
+    let llm = ScriptedTransport([[
+        toolCallChunk(#"{"index":0,"id":"a","function":{"name":"one","arguments":"{\"content\":\"yar"}}"#),
+        #"data: {"choices":[{"delta":{},"finish_reason":"length"}]}"#,
+        "data: [DONE]",
+    ], doneReply])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: [EchoNamed("one")]))
+    #expect(toolCalls(in: events).first?.function.arguments == "{}")
+    let results = events.compactMap { event -> String? in
+        if case let .message(message) = event, message.role == .tool { message.content } else { nil }
+    }
+    #expect(results.first?.contains("cut off") == true)
+    #expect(!requestBody(llm, 1).contains(#"yar"#))
+}
+
+@Test func emptyArgumentsBecomeAnEmptyObject() async throws {
+    let llm = ScriptedTransport([[
+        toolCallChunk(#"{"index":0,"id":"a","function":{"name":"one","arguments":""}}"#),
+        "data: [DONE]",
+    ], doneReply])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: [EchoNamed("one")]))
+    #expect(toolCalls(in: events).first?.function.arguments == "{}")
+    let results = events.compactMap { event -> String? in
+        if case let .message(message) = event, message.role == .tool { message.content } else { nil }
+    }
+    #expect(results.first == "ran one")
+}
+
+@Test func toolCallsOnTheLastStepAreDropped() async throws {
+    let llm = ScriptedTransport([[
+        #"data: {"choices":[{"delta":{"content":"cevap"}}]}"#,
+        toolCallChunk(#"{"index":0,"id":"a","function":{"name":"one","arguments":"{}"}}"#),
+        "data: [DONE]",
+    ]])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: [EchoNamed("one")], maxSteps: 1))
+    #expect(toolCalls(in: events).isEmpty)
+    #expect(storedAnswer(events) == "cevap")
+}
+
+@Test func rejectedOptionalParametersAreDroppedAndRetried() async throws {
+    let llm = SequenceTransport([
+        .failure(HTTPStatusError(statusCode: 400, body: #"{"error":{"message":"Unknown parameter: stream_options"}}"#)),
+        .lines(doneReply),
+    ])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: []))
+    #expect(storedAnswer(events) == "ok")
+    #expect(llm.bodies[0].contains("stream_options"))
+    #expect(!llm.bodies[1].contains("stream_options"))
+
+    let effort = SequenceTransport([
+        .failure(HTTPStatusError(statusCode: 422, body: #"{"error":{"message":"reasoning_effort is not supported"}}"#)),
+        .lines(doneReply),
+    ])
+    let configuration = try LLMConfiguration(baseURL: "https://llm.example.com/v1", apiKey: "k", model: "m", reasoningEffort: .high)
+    _ = try await collect(AgentLoop(client: LLMClient(configuration: configuration, transport: effort), tools: []))
+    #expect(effort.bodies[0].contains("reasoning_effort"))
+    #expect(!effort.bodies[1].contains("reasoning_effort"))
+}
+
+@Test func temporaryErrorsAreRetriedOnlyBeforeOutput() async throws {
+    let busyOnce = SequenceTransport([.failure(HTTPStatusError(statusCode: 503, body: "")), .lines(doneReply)])
+    #expect(storedAnswer(try await collect(AgentLoop(client: try llmClient(busyOnce), tools: [], retryDelays: [.zero]))) == "ok")
+    #expect(busyOnce.bodies.count == 2)
+
+    let midway = FailingTransport(lines: [#"data: {"choices":[{"delta":{"content":"yarım"}}]}"#], failure: HTTPStatusError(statusCode: 503, body: ""))
+    await #expect(throws: LLMError.self) {
+        try await collect(AgentLoop(client: try llmClient(midway), tools: [], retryDelays: [.zero]))
+    }
+
+    let wrongKey = SequenceTransport([.failure(HTTPStatusError(statusCode: 401, body: ""))])
+    await #expect(throws: LLMError.self) {
+        try await collect(AgentLoop(client: try llmClient(wrongKey), tools: [], retryDelays: [.zero]))
+    }
+    #expect(wrongKey.bodies.count == 1)
+}
+
+@Test func mistralContentPartsAndChunksWithoutChoicesAreRead() async throws {
+    let llm = ScriptedTransport([[
+        #"data: {"object":"ping"}"#,
+        #"data: {"choices":[{"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"düşünce"}]}]}}]}"#,
+        #"data: {"choices":[{"delta":{"content":[{"type":"text","text":"cevap"}]}}]}"#,
+        "data: [DONE]",
+    ]])
+    let events = try await collect(AgentLoop(client: try llmClient(llm), tools: []))
+    #expect(events.contains(.reasoning("düşünce")))
+    #expect(storedAnswer(events) == "cevap")
+}
+
+@Test func webSearchAcceptsLooseMaxResults() async throws {
+    let transport = SendRecorder(json: #"{"web":{"results":[]}}"#)
+    let tool = WebSearchTool(backend: .brave(apiKey: "k"), transport: transport)
+    _ = try await tool.run(arguments: #"{"query":"x","max_results":"2"}"#)
+    _ = try await tool.run(arguments: #"{"query":"x","max_results":4.0}"#)
+    #expect(transport.requests[0].url.absoluteString.contains("count=2"))
+    #expect(transport.requests[1].url.absoluteString.contains("count=4"))
+}
+
+@Test func markdownStreamSplitsAtFinishedBlocks() {
+    #expect(MarkdownStream.split("Başlık\n\nYazılan") == ("Başlık\n\n", "Yazılan"))
+    #expect(MarkdownStream.split("Tek paragraf") == ("", "Tek paragraf"))
+    #expect(MarkdownStream.split("Giriş\n\n```swift\nlet a = 1\n\nlet b") == ("Giriş\n\n", "```swift\nlet a = 1\n\nlet b"))
+    #expect(MarkdownStream.split("```\nkod\n```\nSonra") == ("```\nkod\n```\n", "Sonra"))
 }
 
 @Test func modelToolSupportComesFromSupportedParameters() throws {

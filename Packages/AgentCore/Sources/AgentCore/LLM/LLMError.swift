@@ -9,6 +9,8 @@ public enum LLMError: Error, Equatable, Sendable {
     /// Akışın içinde gelen hata (`data: {"error": ...}`).
     case server(message: String)
     case invalidResponse
+    /// Model metin de araç çağrısı da üretmedi. `reason`: sunucunun bildirdiği `finish_reason`.
+    case emptyResponse(reason: String?)
 }
 
 extension LLMError {
@@ -16,7 +18,7 @@ extension LLMError {
     public var isTemporary: Bool {
         switch self {
         case let .http(status, _): status == 408 || status == 429 || (500..<600).contains(status)
-        case .server: true
+        case .server, .emptyResponse: true
         default: false
         }
     }
@@ -43,6 +45,10 @@ extension LLMError: LocalizedError {
             return "Server error: \(message)"
         case .invalidResponse:
             return "The server sent an unexpected response."
+        case .emptyResponse(reason: "content_filter"):
+            return "The provider's content filter blocked this reply."
+        case .emptyResponse:
+            return "The model returned an empty reply."
         }
     }
 }

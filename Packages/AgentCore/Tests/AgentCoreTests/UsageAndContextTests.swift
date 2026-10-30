@@ -3,7 +3,12 @@ import Testing
 @testable import AgentCore
 
 func withoutUsage(_ events: [LLMStreamEvent]) -> [LLMStreamEvent] {
-    events.filter { if case .usage = $0 { false } else { true } }
+    events.filter {
+        switch $0 {
+        case .usage, .finished: false
+        default: true
+        }
+    }
 }
 
 private func usages(_ events: [LLMStreamEvent]) -> [TokenUsage] {

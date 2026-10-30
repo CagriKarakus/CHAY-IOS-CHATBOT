@@ -36,7 +36,7 @@ public struct ImageGenerator: Sendable {
             body: try JSONEncoder().encode(Request(model: configuration.model, prompt: prompt))
         ))
         guard (200..<300).contains(response.statusCode) else {
-            let message = (try? JSONDecoder().decode(APIErrorBody.self, from: response.body))?.error.message
+            let message = (try? JSONDecoder().decode(APIErrorBody.self, from: response.body))?.message
             throw LLMError.http(status: response.statusCode, message: message?.replacingOccurrences(of: configuration.apiKey, with: "***"))
         }
         guard let item = (try? JSONDecoder().decode(Response.self, from: response.body))?.data.first else {

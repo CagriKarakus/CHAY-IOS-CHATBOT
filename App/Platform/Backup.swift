@@ -34,6 +34,12 @@ struct Backup: Codable {
         let text: String
     }
 
+    /// Üretilen görseller.
+    struct StoredImage: Codable {
+        let name: String
+        let data: Data
+    }
+
     var version = 1
     var exportedAt = Date.now
     var providers: [Provider]
@@ -51,6 +57,8 @@ struct Backup: Codable {
     var scheduledTasks: [ScheduledTask]?
     /// Üslup tercihleri. Eski yedeklerde yok.
     var personalization: Personalization?
+    /// Üretilen görseller. Eski yedeklerde yok.
+    var images: [StoredImage]?
 }
 
 /// İçe aktarmada eklenenlerin sayısı.
@@ -94,7 +102,8 @@ enum BackupService {
             },
             connectors: connectors.connectors,
             scheduledTasks: scheduledTasks.tasks,
-            personalization: settings.personalization
+            personalization: settings.personalization,
+            images: generatedImages()
         )
 
         let encoder = JSONEncoder()
@@ -166,13 +175,33 @@ enum BackupService {
         try FileManager.default.createDirectory(at: DocumentFile.directory, withIntermediateDirectories: true)
         for document in backup.documents {
             // Sadece düz dosya adları; yol içerenler atlanır.
-            guard !document.name.contains("/"), !document.name.contains(".."),
-                  document.name.lowercased().hasSuffix(".md") else { continue }
+            let name = document.name.lowercased()
+            guard isPlainName(document.name), name.hasSuffix(".md") || name.hasSuffix(".html") else { continue }
             let target = DocumentFile.directory.appendingPathComponent(document.name)
             guard !FileManager.default.fileExists(atPath: target.path) else { continue }
             try Data(document.text.utf8).write(to: target, options: .atomic)
             summary.documents += 1
         }
+        for image in backup.images ?? [] where isPlainName(image.name) && isImageName(image.name) {
+            let target = DocumentFile.directory.appendingPathComponent(image.name)
+            guard !FileManager.default.fileExists(atPath: target.path) else { continue }
+            try image.data.write(to: target, options: .atomic)
+        }
         return summary
+    }
+
+    private static func isPlainName(_ name: String) -> Bool {
+        !name.contains("/") && !name.contains("\\") && !name.contains("..")
+    }
+
+    private static func isImageName(_ name: String) -> Bool {
+        ["png", "jpg", "jpeg"].contains((name as NSString).pathExtension.lowercased())
+    }
+
+    private static func generatedImages() -> [Backup.StoredImage] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: DocumentFile.directory, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { isImageName($0.lastPathComponent) }.compactMap { url in
+            (try? Data(contentsOf: url)).map { Backup.StoredImage(name: url.lastPathComponent, data: $0) }
+        }
     }
 }

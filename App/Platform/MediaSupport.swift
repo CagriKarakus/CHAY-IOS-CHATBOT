@@ -1,6 +1,7 @@
 import AgentCore
 import AVFoundation
 import Foundation
+import ImageIO
 import NaturalLanguage
 import Observation
 import UniformTypeIdentifiers
@@ -8,24 +9,24 @@ import ZIPFoundation
 import UIKit
 
 /// Modele gönderilecek görseli küçültür (uzun kenar en fazla 1568 px, JPEG) ve küçük bir önizleme üretir.
+/// Ana iş parçacığında çağrılmamalı; `ChatViewModel.addImage` arka planda çalıştırır.
 func preparedImage(from data: Data) -> (jpeg: Data, thumbnail: Data)? {
-    guard let image = UIImage(data: data),
-          let jpeg = resized(image, maxSide: 1568).jpegData(compressionQuality: 0.8),
-          let thumbnail = resized(image, maxSide: 240).jpegData(compressionQuality: 0.7)
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let jpeg = downsampled(source, maxSide: 1568, quality: 0.8),
+          let thumbnail = downsampled(source, maxSide: 240, quality: 0.7)
     else { return nil }
     return (jpeg, thumbnail)
 }
 
-private func resized(_ image: UIImage, maxSide: CGFloat) -> UIImage {
-    let longest = max(image.size.width, image.size.height)
-    guard longest > maxSide else { return image }
-    let scale = maxSide / longest
-    let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-    let format = UIGraphicsImageRendererFormat.default()
-    format.scale = 1
-    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
-        image.draw(in: CGRect(origin: .zero, size: size))
-    }
+/// Fotoğrafın tamamını belleğe açmadan küçültür; EXIF yönünü uygular.
+private func downsampled(_ source: CGImageSource, maxSide: Int, quality: CGFloat) -> Data? {
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxSide,
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+    return UIImage(cgImage: image).jpegData(compressionQuality: quality)
 }
 
 /// Ses girdisi için 16 kHz mono WAV kaydı (OpenAI `input_audio` wav kabul eder). En fazla 2 dakika.

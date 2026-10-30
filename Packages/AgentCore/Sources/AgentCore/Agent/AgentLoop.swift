@@ -20,6 +20,8 @@ public enum AgentEvent: Equatable, Sendable {
     case serverToolsUnavailable
     /// Sağlayıcının kendi aramasından gelen kaynaklar.
     case sources([Source])
+    /// Cevap tamamlanmadan bitti (`length`: token sınırı, `content_filter`: içerik filtresi).
+    case replyCutOff(reason: String)
 }
 
 /// Asıl model yoğunluk veya sunucu hatası verince sırayla denenen model.
@@ -56,6 +58,7 @@ public struct AgentLoop: Sendable {
     private let fallbacks: [FallbackModel]
     private let shouldFallBack: @Sendable (any Error) async -> Bool
     private let assumeUntrusted: Bool
+    private let retryDelays: [Duration]
 
     /// `maxSteps`: bir istekte modele en fazla kaç kez gidileceği. Son adımda araç verilmez, model cevap vermek zorunda kalır.
     /// `approve`: onay gerektiren araç çağrılarında kullanıcıya sorar; verilmezse bu çağrılar reddedilir.
@@ -64,6 +67,7 @@ public struct AgentLoop: Sendable {
     /// `shouldFallBack`: hatanın yedeğe geçirip geçirmeyeceği.
     /// `assumeUntrusted`: sohbette önceden sağlayıcı araması kullanıldı; o içerik işaretsiz geldiği için
     /// kalıcı işlemler yine onay ister.
+    /// `retryDelays`: yedek model kalmadığında geçici hatalarda aynı modelin yeniden denenmesinden önceki beklemeler.
     public init(
         client: LLMClient,
         tools: [any Tool],
@@ -72,7 +76,8 @@ public struct AgentLoop: Sendable {
         refreshTools: (@Sendable () async -> [any Tool])? = nil,
         fallbacks: [FallbackModel] = [],
         shouldFallBack: @escaping @Sendable (any Error) async -> Bool = { ($0 as? LLMError)?.isTemporary ?? false },
-        assumeUntrusted: Bool = false
+        assumeUntrusted: Bool = false,
+        retryDelays: [Duration] = [.seconds(1), .seconds(3)]
     ) {
         self.client = client
         self.tools = Self.index(tools)
@@ -82,6 +87,7 @@ public struct AgentLoop: Sendable {
         self.fallbacks = fallbacks
         self.shouldFallBack = shouldFallBack
         self.assumeUntrusted = assumeUntrusted
+        self.retryDelays = retryDelays
     }
 
     /// Sağlayıcının yerleşik aracı reddettiğini gösteren hatalar: kredi yok (402), model veya istek desteklemiyor.
@@ -123,69 +129,121 @@ public struct AgentLoop: Sendable {
             var text = ""
             var calls: [ToolCall] = []
             var offeredTools: [ToolDefinition] = []
+            var finishReason: String?
+            var retries = 0
 
             attempts: while true {
                 // Sağlayıcı aramayı kendisi yapıyorsa yerel araç gönderilmez; yerleşik aracı olmayan
                 // modele geçilince yerel araç kendiliğinden geri gelir.
                 let replaced = activeClient.serverTools?.replaces ?? []
                 offeredTools = step < maxSteps ? definitions.filter { !replaced.contains($0.function.name) } : []
+                var producedOutput = false
                 do {
                     for try await event in activeClient.streamChat(conversation, tools: offeredTools, useServerTools: step < maxSteps) {
                         switch event {
                         case let .text(delta):
                             text += delta
+                            producedOutput = true
                             emit(.text(delta))
                         case let .toolCalls(requested):
                             calls = requested
                         case let .usage(usage):
                             emit(.usage(usage))
                         case let .reasoning(thought):
+                            producedOutput = true
                             emit(.reasoning(thought))
                         case let .toolCallProgress(name, characters):
                             emit(.preparingTool(name: name, characters: characters))
                         case let .citations(sources):
                             untrusted = true
                             emit(.sources(sources))
+                        case let .finished(reason):
+                            finishReason = reason
                         }
+                    }
+                    // Araç sunulmayan adımdaki araç çağrıları çalıştırılamaz; geçmişe de yazılmaz.
+                    if offeredTools.isEmpty { calls = [] }
+                    if text.isEmpty, calls.isEmpty {
+                        throw LLMError.emptyResponse(reason: finishReason)
                     }
                     break attempts
                 } catch {
                     guard !Task.isCancelled, !(error is CancellationError) else { throw error }
-                    if activeClient.serverTools != nil, Self.rejectsServerTools(error) {
+                    if let adjusted = activeClient.withoutRejectedParameters(after: error) {
+                        activeClient = adjusted
+                    } else if activeClient.serverTools != nil, Self.rejectsServerTools(error) {
                         activeClient = activeClient.withoutServerTools()
-                        text = ""
-                        calls = []
                         emit(.serverToolsUnavailable)
-                        continue attempts
+                    } else {
+                        guard await shouldFallBack(error) else { throw error }
+                        if let next = remainingFallbacks.first {
+                            remainingFallbacks.removeFirst()
+                            activeClient = next.client
+                            emit(.modelSwitched(id: next.id, name: next.name))
+                        } else if !producedOutput, retries < retryDelays.count {
+                            try await Task.sleep(for: retryDelays[retries])
+                            retries += 1
+                        } else {
+                            throw error
+                        }
                     }
-                    guard let next = remainingFallbacks.first, await shouldFallBack(error) else { throw error }
-                    remainingFallbacks.removeFirst()
-                    activeClient = next.client
                     text = ""
                     calls = []
-                    emit(.modelSwitched(id: next.id, name: next.name))
                 }
+            }
+
+            // Geçersiz argümanlar geçmişe yazılmaz: bazı API'ler sonraki isteklerde bunları reddeder.
+            var invalidCalls: Set<String> = []
+            let storedCalls = calls.map { call -> ToolCall in
+                var call = call
+                let arguments = call.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+                if arguments.isEmpty {
+                    call.function.arguments = "{}"
+                } else if !Self.isJSONObject(arguments) {
+                    invalidCalls.insert(call.id)
+                    call.function.arguments = "{}"
+                }
+                return call
             }
 
             let assistant = ChatMessage(
                 role: .assistant,
                 content: text.isEmpty ? nil : text,
-                toolCalls: calls.isEmpty ? nil : calls
+                toolCalls: storedCalls.isEmpty ? nil : storedCalls
             )
             conversation.append(assistant)
             emit(.message(assistant))
 
-            if calls.isEmpty || offeredTools.isEmpty {
+            if storedCalls.isEmpty {
+                if let finishReason, ["length", "content_filter"].contains(finishReason) {
+                    emit(.replyCutOff(reason: finishReason))
+                }
                 return
             }
 
-            for call in calls {
+            for call in storedCalls {
                 try Task.checkCancellation()
+                guard !invalidCalls.contains(call.id) else {
+                    emit(.toolStarted(id: call.id, name: call.function.name, detail: nil))
+                    emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
+                    let result = ChatMessage(
+                        role: .tool,
+                        content: "Error: the arguments were cut off or aren't valid JSON, so the tool didn't run. If the content is long, shorten it or split it into several calls.",
+                        toolCallID: call.id
+                    )
+                    conversation.append(result)
+                    emit(.message(result))
+                    continue
+                }
                 let result = try await execute(call, tools: tools, conversation: conversation, untrusted: untrusted, emit: emit)
                 conversation.append(result)
                 emit(.message(result))
             }
         }
+    }
+
+    private static func isJSONObject(_ text: String) -> Bool {
+        (try? JSONSerialization.jsonObject(with: Data(text.utf8))) is [String: Any]
     }
 
     /// Aracı çalıştırır; hataları modele metin olarak döner ki model toparlayabilsin.
