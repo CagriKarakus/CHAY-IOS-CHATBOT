@@ -273,7 +273,7 @@ struct ChatView: View {
                 ConnectorSetupSheet(
                     setup: setup,
                     connect: { try await viewModel.finishConnectorSetup(token: $0, clientID: $1) },
-                    cancel: { viewModel.resolveConnectorSetup(.declined) }
+                    cancel: { viewModel.closeConnectorSetup() }
                 )
             }
             .confirmationDialog(

@@ -66,7 +66,7 @@ private struct EchoTool: Tool {
     let events = try await collect(loop.run([]))
 
     #expect(events.contains(.toolFinished(id: "c1", sources: [], files: [], failed: true)))
-    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Error: HTTP error 500.", toolCallID: "c1"))))
+    #expect(events.contains(.message(ChatMessage(role: .tool, content: "Error: HTTP error 500: a problem on the server. It may work later.", toolCallID: "c1"))))
 }
 
 @Test func unknownToolIsReported() async throws {

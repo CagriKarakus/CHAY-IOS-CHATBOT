@@ -179,6 +179,8 @@ final class ChatViewModel {
     private var turnTask: Task<Void, Never>?
     private var approvalContinuation: CheckedContinuation<Bool, Never>?
     private var connectorSetupContinuation: CheckedContinuation<ConnectorSetupResult, Never>?
+    /// Penceredeki son deneme hata verdiyse nedeni; pencere kapanınca modele bildirilir.
+    private var lastConnectorSetupError: (reason: String, serverDetail: String?)?
     /// Bu turda açık bağlayıcıların araçları; turda yeni bağlanan da eklenir.
     private var turnConnectorTools: [any Tool] = []
     private var context: ModelContext?
@@ -571,6 +573,7 @@ final class ChatViewModel {
         if let existing, isConnectorActive(existing), !existing.tools.isEmpty, !connectorLibrary.needsSignIn.contains(existing.id) {
             return .alreadyConnected(toolCount: existing.enabledTools.count)
         }
+        lastConnectorSetupError = nil
         return await withCheckedContinuation { continuation in
             connectorSetupContinuation = continuation
             pendingConnectorSetup = PendingConnectorSetup(
@@ -585,10 +588,25 @@ final class ChatViewModel {
     /// Hata fırlatırsa pencere açık kalır, kullanıcı tekrar deneyebilir.
     func finishConnectorSetup(token: String, clientID: String) async throws {
         guard let pending = pendingConnectorSetup, let connectorLibrary else { return }
-        let connector = try await connectorLibrary.connectFromChat(pending.proposal, token: token, clientID: clientID)
+        let connector: Connector
+        do {
+            connector = try await connectorLibrary.connectFromChat(pending.proposal, token: token, clientID: clientID)
+        } catch {
+            lastConnectorSetupError = (connectorErrorMessage(error), (error as? any ServerDetailError)?.serverDetail)
+            throw error
+        }
         setConnector(connector, active: true)
         turnConnectorTools = await connectorLibrary.tools(in: selectedConnectorIDs)
         resolveConnectorSetup(.connected(toolCount: connector.enabledTools.count))
+    }
+
+    /// Penceredeki "Vazgeç": deneme başarısız olduysa bu bir ret değil, sorun olarak bildirilir.
+    func closeConnectorSetup() {
+        if let error = lastConnectorSetupError {
+            resolveConnectorSetup(.failedThenClosed(reason: error.reason, serverDetail: error.serverDetail))
+        } else {
+            resolveConnectorSetup(.declined)
+        }
     }
 
     func resolveConnectorSetup(_ result: ConnectorSetupResult) {

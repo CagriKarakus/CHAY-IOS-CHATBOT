@@ -22,9 +22,9 @@ public enum MCPError: Error, Equatable, Sendable {
     case insecureURL
     /// Sunucu giriş istiyor. `resourceMetadata`: 401 yanıtındaki OAuth bilgi adresi.
     case unauthorized(resourceMetadata: URL?)
-    case http(status: Int)
+    case http(status: Int, detail: String? = nil)
     case rpc(code: Int, message: String)
-    case invalidResponse
+    case invalidResponse(detail: String? = nil)
     /// Araç çalıştı ama hata döndürdü (`isError`).
     case toolFailed(String)
 }
@@ -34,10 +34,20 @@ extension MCPError: LocalizedError {
         switch self {
         case .insecureURL: "The connector address must start with https://."
         case .unauthorized: "The connector requires signing in again. The user can do it in Settings > Connectors."
-        case let .http(status): "Connector HTTP error \(status)."
-        case let .rpc(_, message): "Connector error: \(message)"
-        case .invalidResponse: "The connector returned an invalid response."
-        case let .toolFailed(message): "The tool returned an error: \(message)"
+        case let .http(status, _): "Connector HTTP error \(status)."
+        case let .rpc(code, _): "Connector error \(code)."
+        case .invalidResponse: "The server's response isn't a valid MCP response."
+        case .toolFailed: "The tool returned an error."
+        }
+    }
+}
+
+extension MCPError: ServerDetailError {
+    public var serverDetail: String? {
+        switch self {
+        case let .http(_, detail), let .invalidResponse(detail): detail
+        case let .rpc(_, message), let .toolFailed(message): message
+        default: nil
         }
     }
 }
@@ -131,7 +141,9 @@ public actor MCPClient {
             try await ensureInitialized()
             return try await request(method, params: params, isRetry: true)
         }
-        guard (200..<300).contains(response.statusCode) else { throw MCPError.http(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else {
+            throw MCPError.http(status: response.statusCode, detail: Self.diagnostic(response))
+        }
         if method == "initialize", let session = response.header("mcp-session-id") {
             sessionID = session
         }
@@ -179,7 +191,23 @@ public actor MCPClient {
                 return message
             }
         }
-        throw MCPError.invalidResponse
+        throw MCPError.invalidResponse(detail: diagnostic(response))
+    }
+
+    /// Hata ayrıntısı için yanıtın özeti; olası gizli değerler çıkarılır.
+    static func diagnostic(_ response: HTTPResponse) -> String {
+        let body = String(decoding: response.body.prefix(1_000), as: UTF8.self)
+        return "HTTP \(response.statusCode), \(response.contentType ?? "no content type"): \(redacted(String(body.prefix(400))))"
+    }
+
+    static func redacted(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"(?i)bearer\s+[^\s"',]+"#, with: "Bearer [redacted]", options: .regularExpression)
+            .replacingOccurrences(
+                of: #"(?i)(access_token|refresh_token|client_secret|api[_-]?key|token)(["']?\s*[:=]\s*["']?)[^\s"',}]+"#,
+                with: "$1$2[redacted]",
+                options: .regularExpression
+            )
     }
 
     /// SSE gövdesindeki olayların `data:` içerikleri (çok satırlı veri birleştirilir).
@@ -190,8 +218,9 @@ public actor MCPClient {
             if !buffer.isEmpty { messages.append(Data(buffer.joined(separator: "\n").utf8)) }
             buffer = []
         }
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = rawLine.hasSuffix("\r") ? rawLine.dropLast() : rawLine
+        // Swift "\r\n"yi tek karakter sayar; önce tek biçime çevrilir (sunucular ikisini de kullanır).
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        for line in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             if line.isEmpty {
                 flush()
             } else if line.hasPrefix("data:") {
@@ -216,7 +245,7 @@ public actor MCPClient {
         do {
             return try JSONDecoder().decode(T.self, from: try JSONEncoder().encode(value))
         } catch {
-            throw MCPError.invalidResponse
+            throw MCPError.invalidResponse(detail: "Unexpected result format for \(T.self).")
         }
     }
 }

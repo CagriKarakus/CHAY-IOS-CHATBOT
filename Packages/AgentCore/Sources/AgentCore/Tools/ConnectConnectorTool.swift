@@ -16,6 +16,8 @@ public enum ConnectorSetupResult: Equatable, Sendable {
     /// Bağlayıcı bu sohbette zaten açık.
     case alreadyConnected(toolCount: Int)
     case declined
+    /// Bağlantı denendi ve başarısız oldu, ardından kullanıcı pencereyi kapattı. Karar değil, sorun bildirimi.
+    case failedThenClosed(reason: String, serverDetail: String?)
     case failed(String)
 }
 
@@ -84,6 +86,13 @@ public struct ConnectConnectorTool: Tool {
             return ToolOutput(content: "\(proposal.name) is already connected with \(count) tools.")
         case .declined:
             return ToolOutput(content: "The user declined this connection; do not retry it.")
+        case let .failedThenClosed(reason, serverDetail):
+            var content = "Connecting \(proposal.name) (\(proposal.url)) failed: \(reason)\nThe user then closed the window because it didn't work; this doesn't mean they no longer want the connector."
+            if let serverDetail, !serverDetail.isEmpty {
+                content += "\n" + untrustedContent(serverDetail, source: "server response for \(proposal.name)")
+            }
+            content += "\nExplain the cause in plain words and suggest a next step. If the address looks wrong, look for another one. Open the window again for the same address only if the user asks."
+            return ToolOutput(content: content)
         case let .failed(reason):
             return ToolOutput(content: "Connecting \(proposal.name) failed: \(reason)")
         }

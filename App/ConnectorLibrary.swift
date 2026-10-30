@@ -333,7 +333,7 @@ func connectorErrorMessage(_ error: any Error) -> String {
         L("The address must start with https://.", "Adres https:// ile başlamalı.")
     case MCPError.unauthorized:
         L("The server requires signing in, or the token is invalid.", "Sunucu giriş istiyor veya token geçersiz.")
-    case let MCPError.http(status):
+    case let MCPError.http(status, _):
         L("The server returned HTTP \(status).", "Sunucu HTTP \(status) döndürdü.")
     case MCPError.invalidResponse:
         L("The server didn't respond like an MCP server. Check the address.", "Sunucu bir MCP sunucusu gibi yanıt vermedi. Adresi kontrol et.")

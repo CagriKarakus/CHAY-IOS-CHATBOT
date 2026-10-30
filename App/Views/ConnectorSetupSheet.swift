@@ -14,6 +14,8 @@ struct ConnectorSetupSheet: View {
     @State private var showsClientID = false
     @State private var working = false
     @State private var errorMessage: String?
+    /// Sunucunun verdiği teknik yanıt (hata kodu ve özet).
+    @State private var errorDetail: String?
 
     private var proposal: ConnectorProposal { setup.proposal }
 
@@ -50,6 +52,13 @@ struct ConnectorSetupSheet: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(Palette.red)
+                        if let errorDetail {
+                            Text(errorDetail)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(Palette.textMuted)
+                                .lineLimit(6)
+                                .textSelection(.enabled)
+                        }
                     }
                     .listRowBackground(Palette.surface)
                 }
@@ -154,11 +163,13 @@ struct ConnectorSetupSheet: View {
     private func start() {
         working = true
         errorMessage = nil
+        errorDetail = nil
         Task {
             do {
                 try await connect(token, clientID)
             } catch {
                 errorMessage = connectorErrorMessage(error)
+                errorDetail = (error as? any ServerDetailError)?.serverDetail
                 if case MCPOAuthError.registrationUnsupported = error { showsClientID = true }
                 if case MCPOAuthError.registrationFailed = error { showsClientID = true }
             }

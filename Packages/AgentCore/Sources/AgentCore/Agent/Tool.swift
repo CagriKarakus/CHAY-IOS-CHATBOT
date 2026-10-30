@@ -41,6 +41,11 @@ extension Tool {
     }
 }
 
+/// Hatanın, modelin sorunu anlamasına yarayan ham sunucu yanıtı. Güvenilmez veridir; işaretlenerek gösterilir.
+public protocol ServerDetailError: Error {
+    var serverDetail: String? { get }
+}
+
 public struct ToolOutput: Equatable, Sendable {
     /// Modele dönen metin.
     public var content: String
@@ -87,6 +92,12 @@ extension ToolError: LocalizedError {
             return "\(service) API key is not set. The user must enter it in Settings."
         case .http(401), .http(403):
             return "Access denied (the API key may be invalid)."
+        case .http(404):
+            return "HTTP error 404: not found. The address may be wrong."
+        case .http(429):
+            return "HTTP error 429: rate limit or quota reached. Try later or another way."
+        case let .http(status) where (500..<600).contains(status):
+            return "HTTP error \(status): a problem on the server. It may work later."
         case let .http(status):
             return "HTTP error \(status)."
         case .invalidURL:

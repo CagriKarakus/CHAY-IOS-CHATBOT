@@ -154,7 +154,11 @@ public struct AgentLoop: Sendable {
             throw CancellationError()
         } catch {
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
-            return ChatMessage(role: .tool, content: "Error: \(error.localizedDescription)", toolCallID: call.id)
+            var content = "Error: \(error.localizedDescription)"
+            if let detail = (error as? any ServerDetailError)?.serverDetail, !detail.isEmpty {
+                content += "\n" + untrustedContent(detail, source: "server response for \(tool.name)")
+            }
+            return ChatMessage(role: .tool, content: content, toolCallID: call.id)
         }
     }
 
