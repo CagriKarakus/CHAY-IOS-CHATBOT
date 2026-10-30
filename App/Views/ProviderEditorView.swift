@@ -389,6 +389,10 @@ private struct ModelSettingsView: View {
 
             Section {
                 Toggle(L("Reasoning effort", "Düşünme eforu"), isOn: $model.supportsEffort)
+                Toggle(L("Tools", "Araçlar"), isOn: Binding(
+                    get: { model.supportsTools != false },
+                    set: { model.supportsTools = $0 }
+                ))
                 Toggle(L("Image input", "Görsel girdisi"), isOn: flag(\.acceptsImages))
                 Toggle(L("Audio input", "Ses girdisi"), isOn: flag(\.acceptsAudio))
                 Toggle(L("Generates images", "Görsel üretir"), isOn: flag(\.generatesImages))
@@ -396,8 +400,8 @@ private struct ModelSettingsView: View {
                 header(L("Capabilities", "Yetenekler"))
             } footer: {
                 footer(L(
-                    "Effort sends reasoning_effort. Image and audio input add attach buttons in the chat. Image generation sends your message to /images/generations instead of chat.",
-                    "Efor, reasoning_effort gönderir. Görsel ve ses girdisi sohbette ekleme butonlarını açar. Görsel üretme, mesajını sohbet yerine /images/generations'a gönderir."
+                    "Effort sends reasoning_effort. Tools covers web search, files and connectors; turn it off for models that reject tools. Image and audio input add attach buttons in the chat. Image generation sends your message to /images/generations instead of chat.",
+                    "Efor, reasoning_effort gönderir. Araçlar; web araması, dosyalar ve bağlayıcıları kapsar, araç kabul etmeyen modellerde kapat. Görsel ve ses girdisi sohbette ekleme butonlarını açar. Görsel üretme, mesajını sohbet yerine /images/generations'a gönderir."
                 ))
             }
             .listRowBackground(Palette.surface)

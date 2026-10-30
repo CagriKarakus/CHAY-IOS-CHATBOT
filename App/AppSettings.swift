@@ -27,6 +27,8 @@ struct ModelProfile: Codable, Identifiable, Hashable {
     var generatesImages: Bool?
     /// Bağlam penceresi (token); sunucunun model kartından gelir, sıkıştırma eşiği için.
     var contextLength: Int?
+    /// Araç çağırabilir mi; `nil` = bilinmiyor, araçlar gönderilir. Eski kayıtlarda yok.
+    var supportsTools: Bool?
     /// Token limitleri (giriş + çıkış); `nil` = limitsiz.
     var dailyTokenLimit: Int?
     var monthlyTokenLimit: Int?
@@ -40,6 +42,7 @@ struct ModelProfile: Codable, Identifiable, Hashable {
         if let value = info.generatesImages, overwrite || generatesImages == nil { generatesImages = value }
         if let value = info.supportsReasoningEffort, overwrite || !supportsEffort { supportsEffort = value }
         if let value = info.contextLength, overwrite || contextLength == nil { contextLength = value }
+        if let value = info.supportsTools, overwrite || supportsTools == nil { supportsTools = value }
     }
 }
 

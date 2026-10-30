@@ -13,6 +13,8 @@ public struct ModelInfo: Equatable, Sendable {
     public let supportsReasoningEffort: Bool?
     /// Model kartında bildirildiyse bağlam penceresi (token).
     public let contextLength: Int?
+    /// Sunucu bildirdiyse modelin kabul ettiği istek alanları (`tools` vb.).
+    public let supportedParameters: [String]?
 
     public init(
         id: String,
@@ -20,7 +22,8 @@ public struct ModelInfo: Equatable, Sendable {
         outputModalities: [String]? = nil,
         task: String? = nil,
         supportsReasoningEffort: Bool? = nil,
-        contextLength: Int? = nil
+        contextLength: Int? = nil,
+        supportedParameters: [String]? = nil
     ) {
         self.id = id
         self.inputModalities = inputModalities
@@ -28,6 +31,7 @@ public struct ModelInfo: Equatable, Sendable {
         self.task = task
         self.supportsReasoningEffort = supportsReasoningEffort
         self.contextLength = contextLength
+        self.supportedParameters = supportedParameters
     }
 
     /// Bilinmiyorsa `nil` (kullanıcı elle işaretler).
@@ -37,6 +41,11 @@ public struct ModelInfo: Equatable, Sendable {
 
     public var acceptsAudio: Bool? {
         inputModalities.map { $0.contains { $0.lowercased() == "audio" } }
+    }
+
+    /// Araç çağırabilir mi; sunucu bildirmediyse `nil` (araçlar gönderilmeye devam eder).
+    public var supportsTools: Bool? {
+        supportedParameters.map { $0.contains("tools") }
     }
 
     /// Sadece görsel üreten (`/images/generations` ile çalışan) model mi; çıktı modalitesi veya görev adından anlaşılır.
@@ -57,7 +66,8 @@ extension ModelInfo {
             id: model.id,
             inputModalities: model.architecture?.input_modalities ?? model.modalities,
             outputModalities: model.architecture?.output_modalities,
-            task: model.task
+            task: model.task,
+            supportedParameters: model.supported_parameters
         )
     }
 }

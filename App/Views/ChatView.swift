@@ -332,11 +332,19 @@ struct ChatView: View {
             }
             .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: documentContentTypes) { result in
                 guard case let .success(url) = result else { return }
-                guard let text = extractDocumentText(from: url) else {
-                    viewModel.errorMessage = L("Couldn't read the file.", "Dosya okunamadı.")
-                    return
+                viewModel.isReadingDocument = true
+                Task {
+                    let reading = await readDocument(from: url)
+                    viewModel.isReadingDocument = false
+                    guard let reading else {
+                        viewModel.errorMessage = L("No text found in this file.", "Bu dosyada metin bulunamadı.")
+                        return
+                    }
+                    viewModel.addDocument(text: reading.text, name: url.lastPathComponent)
+                    if reading.skippedPages > 0 {
+                        viewModel.errorMessage = skippedPagesNote(reading.skippedPages)
+                    }
                 }
-                viewModel.addDocument(text: text, name: url.lastPathComponent)
             }
             .sheet(item: $sharedFile) { file in
                 ShareSheet(items: [file.url])
@@ -392,6 +400,11 @@ struct ChatView: View {
         path = []
         // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
         viewModel.startNewChat(modelOverride: request.modelID)
+        Task { await sendShortcutRequest(request) }
+    }
+
+    /// Dosyaları ekleyip isteği gönderir; taranmış PDF okumak zaman alabilir.
+    private func sendShortcutRequest(_ request: ShortcutRequest) async {
         // Kestirmeden gelen dosyalar: görseller görsel olarak, diğerleri metni çıkarılarak eklenir.
         var unreadable: [String] = []
         for file in request.files ?? [] {
@@ -403,8 +416,8 @@ struct ChatView: View {
             }
             if UIImage(data: data) != nil {
                 viewModel.addImage(data)
-            } else if let text = extractDocumentText(from: url), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                viewModel.addDocument(text: text, name: file.originalName)
+            } else if let reading = await readDocument(from: url) {
+                viewModel.addDocument(text: reading.text, name: file.originalName)
             } else {
                 unreadable.append(file.originalName)
             }
@@ -525,6 +538,14 @@ struct ChatView: View {
                         .foregroundStyle(Palette.textMuted)
                 }
                 .font(.footnote)
+            }
+            if viewModel.isReadingDocument {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text(L("Reading document…", "Doküman okunuyor…"))
+                }
+                .font(.footnote)
+                .foregroundStyle(Palette.textMuted)
             }
             if !viewModel.pendingAttachments.isEmpty {
                 PendingAttachmentStrip(attachments: viewModel.pendingAttachments) { viewModel.removeAttachment($0) }

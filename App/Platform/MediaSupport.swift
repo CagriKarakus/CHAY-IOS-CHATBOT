@@ -3,7 +3,6 @@ import AVFoundation
 import Foundation
 import NaturalLanguage
 import Observation
-import PDFKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 import UIKit
@@ -172,18 +171,12 @@ enum AttachmentFiles {
     }
 }
 
-/// PDF veya metin dosyasından modele gönderilecek metni çıkarır. Taranmış (sadece görüntü) PDF'lerde metin boş döner.
+/// Metin veya Office dosyasından modele gönderilecek metni çıkarır. PDF'ler için `readDocument` kullanılır.
 func extractDocumentText(from url: URL) -> String? {
     let accessing = url.startAccessingSecurityScopedResource()
     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
     let fileExtension = url.pathExtension.lowercased()
-    if fileExtension == "pdf" {
-        guard let document = PDFDocument(url: url) else { return nil }
-        return (0..<document.pageCount)
-            .compactMap { document.page(at: $0)?.string }
-            .joined(separator: "\n\n")
-    }
     if let kind = OfficeText.Kind(rawValue: fileExtension) {
         // docx/xlsx/pptx: ZIP arşivini aç, içteki XML'lerden metni çıkar.
         guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }

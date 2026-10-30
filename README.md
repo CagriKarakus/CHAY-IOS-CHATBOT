@@ -21,7 +21,7 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Streaming chat** with any OpenAI-compatible `/chat/completions` endpoint, with the model's **reasoning** shown live and a collapsible tool log
 - **Multiple providers and models**: presets for common routers and providers, model lists fetched from the server, a model picker in the chat screen and **reasoning effort** (low / medium / high)
 - **Capabilities detected automatically** from `/models` when the server reports them (e.g. Evren `modalities`, OpenRouter `architecture`) and adjustable by hand
-- **Images, audio and documents**: attach photos (or take them with the camera), voice recordings, PDF, Word, Excel, PowerPoint and text files; document text is extracted on the device, so it works with any model
+- **Images, audio and documents**: attach photos (or take them with the camera), voice recordings, PDF, Word, Excel, PowerPoint and text files; document text is extracted on the device, so it works with any model. Scanned PDFs are read with the phone's own text recognition, up to 30 scanned pages
 - **Image generation** with models that support `/images/generations`, and **read aloud** with the phone's built-in voices
 - **Edit and regenerate** messages, with the same or another model; earlier versions are kept and you can switch between them with ‹ 1/2 ›
 - **Token limits**: set daily and monthly limits (input + output tokens) per model; when one is reached, requests go to a fallback model you chose until the limit resets, or you are asked to pick one
@@ -123,5 +123,6 @@ CHAY is released under the [Apache License 2.0](LICENSE). Third-party packages k
 ## Roadmap
 
 - iCloud sync and Share Extension (need a paid developer account)
+- Providers' built-in web search and image generation (OpenRouter first), with the app's own tools as a fallback
 - Face ID lock
 - On-device models

@@ -743,6 +743,17 @@ private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
     #expect(try await tool.run(arguments: #"{"model":"gpt-x","provider":"Evren"}"#).content == "gpt-x|Evren")
 }
 
+@Test func modelToolSupportComesFromSupportedParameters() throws {
+    let json = #"{"data":[{"id":"a","supported_parameters":["tools","reasoning"]},{"id":"b","supported_parameters":["temperature"]},{"id":"c"}]}"#
+    let models = try JSONDecoder().decode(ModelList.self, from: Data(json.utf8)).data.map(ModelInfo.init)
+    #expect(models.map(\.supportsTools) == [true, false, nil])
+}
+
+@Test func systemPromptTellsToolLessModelsWhatTheyCantDo() {
+    #expect(SystemPrompt.make(toolsAvailable: false).contains("This model has no tools"))
+    #expect(!SystemPrompt.make().contains("This model has no tools"))
+}
+
 @Test func oauthWellKnownCandidates() {
     #expect(MCPOAuth.protectedResourceCandidates(for: URL(string: "https://a.com/v1/mcp/")!).map(\.absoluteString) == [
         "https://a.com/.well-known/oauth-protected-resource/v1/mcp",

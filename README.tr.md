@@ -21,7 +21,7 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - OpenAI-uyumlu her `/chat/completions` endpoint'i ile **akışlı sohbet**; modelin **düşünme süreci** canlı görünür, araç günlüğü açılıp kapanabilir
 - **Birden fazla sağlayıcı ve model**: yaygın router ve sağlayıcılar için hazır ayarlar, sunucudan model listesi çekme, sohbet ekranında model seçici ve **düşünme seviyesi** (düşük / orta / yüksek)
 - Sunucu bildiriyorsa **yetenekler `/models`'tan otomatik algılanır** (ör. Evren `modalities`, OpenRouter `architecture`); elle de ayarlanabilir
-- **Görsel, ses ve doküman**: fotoğraf (kamerayla da), ses kaydı, PDF, Word, Excel, PowerPoint ve metin dosyası eklenebilir; dokümanların metni telefonda çıkarıldığı için her modelle çalışır
+- **Görsel, ses ve doküman**: fotoğraf (kamerayla da), ses kaydı, PDF, Word, Excel, PowerPoint ve metin dosyası eklenebilir; dokümanların metni telefonda çıkarıldığı için her modelle çalışır. Taranmış PDF'ler telefonun kendi metin tanımasıyla okunur (en fazla 30 taranmış sayfa)
 - `/images/generations` destekleyen modellerle **görsel üretme**, telefonun kendi sesleriyle **sesli okuma**
 - Mesajları **düzenleme ve yeniden üretme** (aynı veya başka bir modelle); önceki sürümler saklanır ve ‹ 1/2 › ile aralarında geçilir
 - **Token limitleri**: model başına günlük ve aylık limit (giriş + çıkış tokenları); limit dolunca istekler yenilenene kadar seçtiğin yedek modele gider, yedek seçilmediyse sorulur
@@ -123,5 +123,6 @@ CHAY [Apache License 2.0](LICENSE) ile yayınlanmıştır. Üçüncü taraf pake
 ## Yol haritası
 
 - iCloud senkronizasyonu ve Share Extension (ücretli geliştirici hesabı gerekir)
+- Sağlayıcıların yerleşik web araması ve görsel üretimi (önce OpenRouter); desteklemeyenlerde uygulamanın kendi araçları
 - Face ID kilidi
 - Cihaz üzerinde çalışan modeller

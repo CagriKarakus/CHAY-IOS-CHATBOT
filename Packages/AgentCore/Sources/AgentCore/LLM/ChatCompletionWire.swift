@@ -94,6 +94,8 @@ struct ModelList: Decodable {
         let modalities: [String]?
         let task: String?
         let architecture: Architecture?
+        /// OpenRouter gibi sunucuların bildirdiği, modelin kabul ettiği istek alanları.
+        let supported_parameters: [String]?
     }
     let data: [Model]
 }

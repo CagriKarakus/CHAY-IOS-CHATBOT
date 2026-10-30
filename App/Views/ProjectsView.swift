@@ -95,6 +95,7 @@ struct ProjectDetailView: View {
     @Environment(\.modelContext) private var context
     @Query private var chats: [ConversationRecord]
     @State private var importing = false
+    @State private var reading = false
     @State private var errorMessage: String?
 
     init(project: ProjectRecord, startChat: @escaping (ProjectRecord) -> Void, openChat: @escaping (ConversationRecord) -> Void) {
@@ -163,6 +164,13 @@ struct ProjectDetailView: View {
                 } label: {
                     Label(L("Add File", "Dosya ekle"), systemImage: "plus")
                 }
+                if reading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(L("Reading document…", "Doküman okunuyor…"))
+                    }
+                    .font(.footnote)
+                }
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.footnote)
@@ -204,13 +212,19 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $importing, allowedContentTypes: documentContentTypes) { result in
             guard case let .success(url) = result else { return }
-            guard let text = extractDocumentText(from: url)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-                errorMessage = L("No text found in this file.", "Bu dosyada metin bulunamadı.")
-                return
-            }
+            reading = true
             errorMessage = nil
-            project.files.append(ProjectFile(name: url.lastPathComponent, text: text))
-            try? context.save()
+            Task {
+                let document = await readDocument(from: url)
+                reading = false
+                guard let document else {
+                    errorMessage = L("No text found in this file.", "Bu dosyada metin bulunamadı.")
+                    return
+                }
+                errorMessage = document.skippedPages > 0 ? skippedPagesNote(document.skippedPages) : nil
+                project.files.append(ProjectFile(name: url.lastPathComponent, text: document.text))
+                try? context.save()
+            }
         }
         .onDisappear { try? context.save() }
     }

@@ -127,6 +127,8 @@ final class ChatViewModel {
     private(set) var limitPrompt: LimitPrompt?
     /// Kurulum penceresi açıkken dolu.
     private(set) var pendingConnectorSetup: PendingConnectorSetup?
+    /// Eklenen doküman okunuyor (taranmış PDF'ler zaman alabilir); bitene kadar gönderilemez.
+    var isReadingDocument = false
     /// Yoğunluk hatası aldı ama kullanılabilir yedeği olmayan sağlayıcı; hata satırında yedek seçme menüsü gösterilir.
     private(set) var fallbackPromptProviderID: UUID?
     private(set) var pendingAttachments: [PendingAttachment] = []
@@ -195,7 +197,7 @@ final class ChatViewModel {
     private var currentModel: (providerID: UUID, name: String, id: UUID)?
 
     var canSend: Bool {
-        !isStreaming && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
+        !isStreaming && !isReadingDocument && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
     }
 
     func addImage(_ data: Data) {
@@ -557,6 +559,7 @@ final class ChatViewModel {
         let attachments = history.flatMap { $0.attachments ?? [] }
         return model.id != settings.selection(for: turnModelID)?.model.id
             && model.generatesImages != true
+            && model.supportsTools != false
             && (model.acceptsImages == true || !attachments.contains { $0.kind == .image })
             && (model.acceptsAudio == true || !attachments.contains { $0.kind == .audio })
             && usageTracker?.exceededLimit(of: model) == nil
@@ -871,7 +874,9 @@ final class ChatViewModel {
         if !skills.isEmpty {
             tools.append(UseSkillTool(skills: skills))
         }
-        let baseTools = tools
+        // Araç çağıramayan modele araç gönderilmez; sunucu bunu hata sayabilir.
+        let usesTools = selected.model.supportsTools != false
+        let baseTools = usesTools ? tools : []
         let fallbacks = fallbackModels(for: selected, settings: settings, transport: transport)
         turnFallbackCount = fallbacks.count
         let connectorSelection = selectedConnectorIDs
@@ -900,11 +905,12 @@ final class ChatViewModel {
                     memoryEnabled: usesMemory,
                     skills: skills,
                     project: project,
-                    connectors: connectorSummary
+                    connectors: connectorSummary,
+                    toolsAvailable: usesTools
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 // Bağlayıcı araçları; araç listesi hiç alınmamışsa önce sunucuya bağlanılır.
-                turnConnectorTools = await connectorLibrary?.tools(in: connectorSelection) ?? []
+                turnConnectorTools = usesTools ? await connectorLibrary?.tools(in: connectorSelection) ?? [] : []
                 let agent = AgentLoop(
                     client: client,
                     tools: baseTools + turnConnectorTools,
