@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var searchProvider = SearchProvider.tavily
     @State private var braveKey = ""
     @State private var searxngURL = ""
-    @State private var userInstructions = ""
     @State private var language = AppLanguage.stored
     /// Ekran açıldığındaki seçim; değişirse yeniden başlatma uyarısı gösterilir.
     @State private var initialLanguage = AppLanguage.stored
@@ -53,6 +52,12 @@ struct SettingsView: View {
                         UsageView()
                     } label: {
                         Label(L("Token and search usage", "Token ve arama kullanımı"), systemImage: "chart.bar")
+                            .foregroundStyle(Palette.textBright)
+                    }
+                    NavigationLink {
+                        PersonalizationView()
+                    } label: {
+                        Label(L("Personalization", "Kişiselleştirme"), systemImage: "person.crop.circle")
                             .foregroundStyle(Palette.textBright)
                     }
                     NavigationLink {
@@ -133,17 +138,6 @@ struct SettingsView: View {
                 .listRowBackground(Palette.surface)
 
                 Section {
-                    TextField(L("Personal instructions", "Kişisel talimatlar"), text: $userInstructions, prompt: prompt(L("E.g. Don't use emoji. Keep answers short.", "Örn. Emoji kullanma. Kısa cevap ver.")), axis: .vertical)
-                        .lineLimit(3...10)
-                        .foregroundStyle(Palette.textBright)
-                } header: {
-                    header(L("Personal instructions", "Kişisel talimatlar"))
-                } footer: {
-                    footer(L("Shared with the assistant in every chat.", "Her sohbette asistana iletilir."))
-                }
-                .listRowBackground(Palette.surface)
-
-                Section {
                     Picker(L("Search service", "Arama servisi"), selection: $searchProvider) {
                         ForEach(SearchProvider.allCases) { provider in
                             Text(provider.title).tag(provider)
@@ -181,7 +175,7 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L("Done", "Bitti")) {
-                        settings.saveGeneral(tavilyKey: tavilyKey, userInstructions: userInstructions)
+                        settings.saveTavilyKey(tavilyKey)
                         settings.saveSearch(provider: searchProvider, braveKey: braveKey, searxngURL: searxngURL)
                         dismiss()
                     }
@@ -193,7 +187,6 @@ struct SettingsView: View {
                 searchProvider = settings.searchProvider
                 braveKey = settings.braveKey
                 searxngURL = settings.searxngURL
-                userInstructions = settings.userInstructions
             }
         }
     }

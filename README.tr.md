@@ -29,7 +29,7 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - **Uzun sohbetler**: bağlam büyüyünce eski araç sonuçları kısaltılır, eski mesajlar özetlenir
 
 ### Araçlar
-- **Web araştırması**: destekleyen sağlayıcının kendi araması (OpenRouter) ya da Tavily, Brave Search, kendi SearXNG sunucun veya **key gerektirmeyen DuckDuckGo**. Tavily veya Brave key'i yoksa, geçersizse ya da kota bittiyse aramalar kendiliğinden DuckDuckGo ile yapılır
+- **Web araştırması**: Tavily, Brave Search, kendi SearXNG sunucun veya **key gerektirmeyen DuckDuckGo**; isteğe bağlı olarak destekleyen sağlayıcının kendi araması (OpenRouter). Tavily veya Brave key'i yoksa, geçersizse ya da kota bittiyse aramalar kendiliğinden DuckDuckGo ile yapılır
 - **Sayfa ve akış okuma** (HTML, RSS, Atom); kaynaklar cevapta belirtilir
 - Telefonun JavaScript motoruyla, sıkı bir izin listesi kontrolünden sonra çalışan **hesap makinesi**
 - Uygulamada açılan ve Dosyalar uygulamasında görünen **Markdown dokümanları** ve **artifact'ler** (etkileşimli HTML sayfaları)
@@ -46,7 +46,8 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 
 ### Hafıza ve kişiselleştirme
 - **Hafıza**: kalıcı bilgiler ve tercihler not olarak saklanır ve her sohbette kullanılır (Ayarlar → Hafıza); sohbete özel hafıza anahtarı
-- Her sohbete eklenen **kişisel talimatlar** (ör. "emoji kullanma")
+- **Kişiselleştirme**: asistanın üslubunu, sıcaklığını, coşkusunu, emoji kullanımını ve görsel cevaplarını seç, özel talimatlar ekle. Her modelle çalışır
+- **Doküman araması**: asistan cevap için kayıtlı dokümanlarında arama yapabilir
 - **Görünüm**: sistem, açık veya koyu (Atom One paleti)
 - **İngilizce ve Türkçe** arayüz
 

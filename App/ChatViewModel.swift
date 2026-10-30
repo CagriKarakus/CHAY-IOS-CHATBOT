@@ -874,6 +874,9 @@ final class ChatViewModel {
         if !skills.isEmpty {
             tools.append(UseSkillTool(skills: skills))
         }
+        if settings.personalization.searchesDocuments {
+            tools.append(SearchDocumentsTool(directory: DocumentFile.directory))
+        }
         // Araç çağıramayan modele araç gönderilmez; sunucu bunu hata sayabilir.
         let usesTools = selected.model.supportsTools != false
         let baseTools = usesTools ? tools : []
@@ -884,6 +887,7 @@ final class ChatViewModel {
         let connectorSelection = selectedConnectorIDs
         let connectorSummary = connectorLibrary?.connectors.map { (name: $0.name, active: isConnectorActive($0)) } ?? []
         let userInstructions = settings.userInstructions
+        let personalization = settings.personalization
 
         // Eski turların okunmuş sayfaları ve arama sonuçları kısaltılır; asıl bilgi cevaplarda zaten var.
         history = ContextCompactor.trimmingOldToolResults(history)
@@ -909,7 +913,8 @@ final class ChatViewModel {
                     project: project,
                     connectors: connectorSummary,
                     toolsAvailable: usesTools,
-                    serverSearch: configuration.serverTools != nil
+                    serverSearch: configuration.serverTools != nil,
+                    personalization: personalization
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 // Bağlayıcı araçları; araç listesi hiç alınmamışsa önce sunucuya bağlanılır.

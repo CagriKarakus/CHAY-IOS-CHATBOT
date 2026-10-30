@@ -892,6 +892,71 @@ private final class SequenceTransport: HTTPTransport, @unchecked Sendable {
     #expect(ProviderPreset.matching(baseURL: "https://evren-llmapi.ssyz.org.tr/v1")?.serverTools == nil)
 }
 
+// MARK: - Kişiselleştirme
+
+@Test func personalizationBuildsPromptOnlyForChosenOptions() throws {
+    #expect(Personalization().promptSection == nil)
+    #expect(!SystemPrompt.make().contains("style preferences"))
+
+    var choices = Personalization()
+    choices.style = .efficient
+    choices.emoji = .less
+    choices.visualAnswers = .more
+    let section = try #require(choices.promptSection)
+    #expect(section.contains("Be concise and plain"))
+    #expect(section.contains("Avoid emoji"))
+    #expect(section.contains("create_artifact"))
+    #expect(!section.contains("warmer"))
+
+    let prompt = SystemPrompt.make(userInstructions: "Use emoji", personalization: choices)
+    let style = try #require(prompt.range(of: "style preferences"))
+    let personal = try #require(prompt.range(of: "personal instructions"))
+    #expect(style.lowerBound < personal.lowerBound)
+}
+
+@Test func personalizationDecodesOldOrPartialData() throws {
+    let empty = try JSONDecoder().decode(Personalization.self, from: Data("{}".utf8))
+    #expect(empty == Personalization())
+    #expect(empty.searchesDocuments)
+    let partial = try JSONDecoder().decode(Personalization.self, from: Data(#"{"emoji":"less"}"#.utf8))
+    #expect(partial.emoji == .less)
+
+    var saved = Personalization()
+    saved.style = .nerdy
+    saved.searchesDocuments = false
+    let round = try JSONDecoder().decode(Personalization.self, from: JSONEncoder().encode(saved))
+    #expect(round == saved)
+}
+
+@Test func searchDocumentsFindsAndReadsMarkdownOnly() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try Data("Türk çayı demlenir. Bu rapor çay üretimini anlatır.".utf8).write(to: folder.appendingPathComponent("rapor.md"))
+    try Data("Kahve notları.".utf8).write(to: folder.appendingPathComponent("kahve.md"))
+    try Data("gizli çay".utf8).write(to: folder.appendingPathComponent("sayfa.html"))
+    let tool = SearchDocumentsTool(directory: folder)
+
+    let found = try await tool.run(arguments: #"{"query":"cay uretimi"}"#).content
+    #expect(found.contains("rapor.md"))
+    #expect(found.contains(untrustedContentMarker))
+    #expect(!found.contains("kahve.md"))
+    #expect(!found.contains("sayfa.html"))
+
+    let read = try await tool.run(arguments: #"{"file":"rapor.md"}"#).content
+    #expect(read.contains("Türk çayı demlenir"))
+    #expect(read.contains(untrustedContentMarker))
+
+    #expect(try await tool.run(arguments: #"{"query":"zzz"}"#).content.contains("No saved document"))
+    #expect(try await tool.run(arguments: #"{"file":"yok.md"}"#).content.contains("no document named"))
+    await #expect(throws: ToolError.invalidFilename) {
+        try await tool.run(arguments: #"{"file":"../gizli.md"}"#)
+    }
+    await #expect(throws: ToolError.invalidArguments) {
+        try await tool.run(arguments: "{}")
+    }
+}
+
 @Test func modelToolSupportComesFromSupportedParameters() throws {
     let json = #"{"data":[{"id":"a","supported_parameters":["tools","reasoning"]},{"id":"b","supported_parameters":["temperature"]},{"id":"c"}]}"#
     let models = try JSONDecoder().decode(ModelList.self, from: Data(json.utf8)).data.map(ModelInfo.init)

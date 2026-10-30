@@ -49,6 +49,8 @@ struct Backup: Codable {
     var connectors: [Connector]?
     /// Zamanlanmış görevler. Eski yedeklerde yok.
     var scheduledTasks: [ScheduledTask]?
+    /// Üslup tercihleri. Eski yedeklerde yok.
+    var personalization: Personalization?
 }
 
 /// İçe aktarmada eklenenlerin sayısı.
@@ -91,7 +93,8 @@ enum BackupService {
                 Backup.StoredProject(id: $0.id, name: $0.name, instructions: $0.instructions, createdAt: $0.createdAt, files: $0.files)
             },
             connectors: connectors.connectors,
-            scheduledTasks: scheduledTasks.tasks
+            scheduledTasks: scheduledTasks.tasks,
+            personalization: settings.personalization
         )
 
         let encoder = JSONEncoder()
@@ -158,6 +161,7 @@ enum BackupService {
         summary.connectors = connectors.importConnectors(backup.connectors ?? [])
         summary.scheduledTasks = scheduledTasks.importTasks(backup.scheduledTasks ?? [])
         settings.importUserInstructions(backup.userInstructions)
+        settings.importPersonalization(backup.personalization)
 
         try FileManager.default.createDirectory(at: DocumentFile.directory, withIntermediateDirectories: true)
         for document in backup.documents {

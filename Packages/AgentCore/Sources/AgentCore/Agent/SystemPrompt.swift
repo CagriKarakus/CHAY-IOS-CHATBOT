@@ -10,6 +10,7 @@ public enum SystemPrompt {
     /// `connectors`: uygulamada kayıtlı bağlayıcıların adı ve bu sohbette açık olup olmadığı.
     /// `toolsAvailable`: model araç çağıramıyorsa `false`; yapamayacağı işleri söylemesi istenir.
     /// `serverSearch`: web aramasını sağlayıcı yapıyor; sonuçlar `<untrusted_content>` ile işaretlenemez.
+    /// `personalization`: üslup tercihleri; kişisel talimatlardan önce eklenir, çakışırsa talimatlar geçerli olur.
     public static func make(
         now: Date = Date(),
         timeZone: TimeZone = .current,
@@ -21,7 +22,8 @@ public enum SystemPrompt {
         project: ProjectContext? = nil,
         connectors: [(name: String, active: Bool)] = [],
         toolsAvailable: Bool = true,
-        serverSearch: Bool = false
+        serverSearch: Bool = false,
+        personalization: Personalization = Personalization()
     ) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -78,6 +80,10 @@ public enum SystemPrompt {
 
         if let summary, !summary.isEmpty {
             prompt += "\n\nSummary of the earlier part of this conversation (older messages were summarized to fit the context):\n\(summary)"
+        }
+
+        if let style = personalization.promptSection {
+            prompt += "\n\n" + style
         }
 
         let instructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -29,7 +29,7 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
 
 ### Tools
-- **Web research** with the provider's own search where available (OpenRouter), or with Tavily, Brave Search, your own SearXNG, or **DuckDuckGo with no key**. If the Tavily or Brave key is missing, invalid or out of quota, searches fall back to DuckDuckGo automatically
+- **Web research** with Tavily, Brave Search, your own SearXNG or **DuckDuckGo with no key**, or optionally the provider's own search where available (OpenRouter). If the Tavily or Brave key is missing, invalid or out of quota, searches fall back to DuckDuckGo automatically
 - **Page and feed reading** (HTML, RSS, Atom) with sources cited in the reply
 - **Calculator** evaluated by the phone's JavaScript engine after a strict allow-list check
 - **Markdown documents** and **artifacts** (interactive HTML pages) that open in the app and show up in the Files app
@@ -46,7 +46,8 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 
 ### Memory and personalization
 - **Memory**: lasting facts and preferences are saved as notes and shared with every chat (Settings → Memory), with a per-chat memory switch
-- **Personal instructions** added to every chat (e.g. "don't use emoji")
+- **Personalization**: choose the assistant's style, warmth, enthusiasm, emoji and visual answers, and add custom instructions. They work with every model
+- **Document search**: the assistant can search your saved documents for answers
 - **Appearance**: system, light or dark (Atom One palette)
 - **English and Turkish** interface
 

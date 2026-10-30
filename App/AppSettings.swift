@@ -12,7 +12,7 @@ struct Provider: Codable, Identifiable, Hashable {
     var preset: String?
     /// Bu sağlayıcı yoğunken veya çalışmazken sırayla denenecek modeller. Eski kayıtlarda yok.
     var fallbackModelIDs: [UUID]?
-    /// Sağlayıcının yerleşik araçları (ör. web araması); `nil` = açık. Eski kayıtlarda yok.
+    /// Sağlayıcının yerleşik araçlarını (ör. web araması) kullan; `nil` = kapalı, seçilen arama servisi geçerli.
     var usesBuiltInFeatures: Bool?
 
     /// Kullanıcı ayarından bağımsız olarak sağlayıcının sunduğu yerleşik araçlar.
@@ -83,6 +83,7 @@ final class AppSettings {
         static let searchProvider = "search.provider"
         static let searxngURL = "search.searxngURL"
         static let userInstructions = "user.instructions"
+        static let personalization = "user.personalization"
 
         static func apiKey(_ provider: UUID) -> String { "provider.\(provider.uuidString).apiKey" }
         /// Ek HTTP başlıkları gizli değer içerebileceği için Keychain'de (JSON).
@@ -102,6 +103,7 @@ final class AppSettings {
     private(set) var searxngURL: String
     /// Her sohbette system prompt'a eklenen kişisel talimatlar (örn. "emoji kullanma").
     private(set) var userInstructions: String
+    private(set) var personalization: Personalization
     private var apiKeys: [UUID: String] = [:]
     private var extraHeaders: [UUID: [String: String]] = [:]
 
@@ -112,6 +114,8 @@ final class AppSettings {
         searchProvider = defaults.string(forKey: Keys.searchProvider).flatMap(SearchProvider.init(rawValue:)) ?? .tavily
         searxngURL = defaults.string(forKey: Keys.searxngURL) ?? ""
         userInstructions = defaults.string(forKey: Keys.userInstructions) ?? ""
+        personalization = defaults.data(forKey: Keys.personalization)
+            .flatMap { try? JSONDecoder().decode(Personalization.self, from: $0) } ?? Personalization()
 
         if let data = defaults.data(forKey: Keys.providers),
            let decoded = try? JSONDecoder().decode([Provider].self, from: data) {
@@ -156,7 +160,7 @@ final class AppSettings {
             reasoningEffort: selected.model.supportsEffort ? selected.model.effort : nil,
             extraHeaders: headers(for: selected.provider.id)
         )
-        if selected.provider.usesBuiltInFeatures != false, selected.model.supportsTools != false {
+        if selected.provider.usesBuiltInFeatures == true, selected.model.supportsTools != false {
             configuration.serverTools = selected.provider.availableServerTools
         }
         return configuration
@@ -285,6 +289,24 @@ final class AppSettings {
         UserDefaults.standard.set(trimmed, forKey: Keys.userInstructions)
     }
 
+    /// Üslup tercihleri varsayılansa yedektekini kullanır; değiştirilmişse üzerine yazmaz.
+    func importPersonalization(_ imported: Personalization?) {
+        guard personalization == Personalization(), let imported else { return }
+        savePersonalization(imported)
+    }
+
+    func savePersonalization(_ personalization: Personalization) {
+        self.personalization = personalization
+        if let data = try? JSONEncoder().encode(personalization) {
+            UserDefaults.standard.set(data, forKey: Keys.personalization)
+        }
+    }
+
+    func saveUserInstructions(_ text: String) {
+        userInstructions = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(userInstructions, forKey: Keys.userInstructions)
+    }
+
     /// Asistanın web aramasında kullandığı servis.
     var searchBackend: SearchBackend {
         switch searchProvider {
@@ -318,10 +340,7 @@ final class AppSettings {
         }
     }
 
-    func saveGeneral(tavilyKey: String, userInstructions: String) {
-        self.userInstructions = userInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(self.userInstructions, forKey: Keys.userInstructions)
-
+    func saveTavilyKey(_ tavilyKey: String) {
         self.tavilyKey = tavilyKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if self.tavilyKey.isEmpty {
             Keychain.delete(Keys.tavilyKey)
