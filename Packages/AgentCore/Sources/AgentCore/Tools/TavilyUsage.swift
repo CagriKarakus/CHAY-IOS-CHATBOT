@@ -37,7 +37,7 @@ public struct TavilyUsage: Decodable, Equatable, Sendable {
             headers: ["Authorization": "Bearer \(key)"],
             body: nil
         ))
-        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
         return try JSONDecoder().decode(TavilyUsage.self, from: response.body)
     }
 }

@@ -92,7 +92,7 @@ final class SendRecorder: HTTPTransport, @unchecked Sendable {
     await #expect(throws: ToolError.missingAPIKey(service: "Tavily")) {
         try await TavilyUsage.fetch(apiKey: "", transport: SendRecorder(json: "{}"))
     }
-    await #expect(throws: ToolError.http(status: 401)) {
+    await #expect(throws: ToolError.http(status: 401, detail: "HTTP 401, application/json: {}")) {
         try await TavilyUsage.fetch(apiKey: "k", transport: SendRecorder(status: 401, json: "{}"))
     }
 }

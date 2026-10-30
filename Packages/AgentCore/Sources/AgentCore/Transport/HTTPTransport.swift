@@ -31,6 +31,22 @@ public struct HTTPResponse: Equatable, Sendable {
     public func header(_ name: String) -> String? {
         headers[name.lowercased()]
     }
+
+    /// Hata ayrıntısı için yanıtın özeti; olası gizli değerler çıkarılır.
+    var diagnostic: String {
+        let text = String(decoding: body.prefix(1_000), as: UTF8.self)
+        return "HTTP \(statusCode), \(contentType ?? "no content type"): \(Self.redacted(String(text.prefix(400))))"
+    }
+
+    static func redacted(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"(?i)bearer\s+[^\s"',]+"#, with: "Bearer [redacted]", options: .regularExpression)
+            .replacingOccurrences(
+                of: #"(?i)(access_token|refresh_token|client_secret|api[_-]?key|token)(["']?\s*[:=]\s*["']?)[^\s"',}]+"#,
+                with: "$1$2[redacted]",
+                options: .regularExpression
+            )
+    }
 }
 
 /// 2xx dışı bir yanıt. `body` hata gövdesinin (kırpılmış) metnidir.

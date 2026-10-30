@@ -130,6 +130,39 @@ private let serverURL = URL(string: "https://mcp.example.com/mcp")!
     }
 }
 
+@Test func oauthErrorsCarryRedactedServerDetail() {
+    #expect(MCPOAuthError.denied("User said no").serverDetail == "User said no")
+    let token = MCPOAuthError.tokenFailed(status: 400, message: "invalid_grant token=abc123")
+    #expect(token.serverDetail == "invalid_grant token=[redacted]")
+    #expect(token.errorDescription?.contains("abc123") == false)
+    #expect(MCPOAuthError.registrationFailed(status: 403, detail: "HTTP 403").serverDetail == "HTTP 403")
+    #expect(MCPOAuthError.stateMismatch.serverDetail == nil)
+}
+
+@Test func webToolFailuresGiveTheModelTheServerResponse() async throws {
+    let transport = SendRecorder(status: 429, json: #"{"error":"Daily quota used","api_key":"k-123"}"#)
+    let tool = FetchPageTool(transport: transport)
+    let llm = ScriptedTransport([
+        [
+            #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"fetch_page","arguments":"{\"url\":\"https://example.com\"}"}}]}}]}"#,
+            "data: [DONE]",
+        ],
+        [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"],
+    ])
+    let loop = AgentLoop(
+        client: LLMClient(configuration: try LLMConfiguration(baseURL: "https://llm.example.com/v1", apiKey: "k", model: "m"), transport: llm),
+        tools: [tool]
+    )
+    var result = ""
+    for try await event in loop.run([ChatMessage(role: .user, content: "x")]) {
+        if case let .message(message) = event, message.role == .tool { result = message.content ?? "" }
+    }
+    #expect(result.contains("HTTP error 429: rate limit or quota reached"))
+    #expect(result.contains("Daily quota used"))
+    #expect(result.contains(untrustedContentMarker))
+    #expect(!result.contains("k-123"))
+}
+
 @Test func toolFailureGivesTheModelMarkedServerDetail() async throws {
     let server = MCPServerStub { request in
         json(#"{"jsonrpc":"2.0","id":\#(rpcID(of: request)),"result":{"content":[{"type":"text","text":"Repo not found"}],"isError":true}}"#)

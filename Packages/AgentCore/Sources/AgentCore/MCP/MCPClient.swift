@@ -142,7 +142,7 @@ public actor MCPClient {
             return try await request(method, params: params, isRetry: true)
         }
         guard (200..<300).contains(response.statusCode) else {
-            throw MCPError.http(status: response.statusCode, detail: Self.diagnostic(response))
+            throw MCPError.http(status: response.statusCode, detail: response.diagnostic)
         }
         if method == "initialize", let session = response.header("mcp-session-id") {
             sessionID = session
@@ -191,23 +191,7 @@ public actor MCPClient {
                 return message
             }
         }
-        throw MCPError.invalidResponse(detail: diagnostic(response))
-    }
-
-    /// Hata ayrıntısı için yanıtın özeti; olası gizli değerler çıkarılır.
-    static func diagnostic(_ response: HTTPResponse) -> String {
-        let body = String(decoding: response.body.prefix(1_000), as: UTF8.self)
-        return "HTTP \(response.statusCode), \(response.contentType ?? "no content type"): \(redacted(String(body.prefix(400))))"
-    }
-
-    static func redacted(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: #"(?i)bearer\s+[^\s"',]+"#, with: "Bearer [redacted]", options: .regularExpression)
-            .replacingOccurrences(
-                of: #"(?i)(access_token|refresh_token|client_secret|api[_-]?key|token)(["']?\s*[:=]\s*["']?)[^\s"',}]+"#,
-                with: "$1$2[redacted]",
-                options: .regularExpression
-            )
+        throw MCPError.invalidResponse(detail: response.diagnostic)
     }
 
     /// SSE gövdesindeki olayların `data:` içerikleri (çok satırlı veri birleştirilir).

@@ -45,7 +45,7 @@ public enum MCPOAuthError: Error, Equatable, Sendable {
     case discoveryFailed
     /// Sunucu otomatik istemci kaydını desteklemiyor; Client ID elle girilmeli.
     case registrationUnsupported
-    case registrationFailed(status: Int)
+    case registrationFailed(status: Int, detail: String? = nil)
     /// Tarayıcıdan dönen yanıt bu girişe ait değil.
     case stateMismatch
     /// Kullanıcı reddetti veya sunucu hata döndü.
@@ -60,11 +60,22 @@ extension MCPOAuthError: LocalizedError {
         switch self {
         case .discoveryFailed: "The server's sign-in (OAuth) information could not be found."
         case .registrationUnsupported: "The server doesn't support automatic client registration; enter a Client ID."
-        case let .registrationFailed(status): "Client registration failed (HTTP \(status))."
+        case let .registrationFailed(status, _): "Client registration failed (HTTP \(status))."
         case .stateMismatch: "The sign-in response doesn't match this request."
-        case let .denied(reason): "Sign-in was denied: \(reason)"
-        case let .tokenFailed(status, message): "Getting the token failed (HTTP \(status))\(message.map { ": \($0)" } ?? "")."
+        case .denied: "The service didn't complete the sign-in."
+        case let .tokenFailed(status, _): "Getting the token failed (HTTP \(status))."
         case .loginRequired: "Signing in again is required."
+        }
+    }
+}
+
+extension MCPOAuthError: ServerDetailError {
+    public var serverDetail: String? {
+        switch self {
+        case let .denied(reason): HTTPResponse.redacted(reason)
+        case let .tokenFailed(_, message): message.map(HTTPResponse.redacted)
+        case let .registrationFailed(_, detail): detail
+        default: nil
         }
     }
 }
@@ -313,9 +324,11 @@ public enum MCPOAuth {
             headers: ["Content-Type": "application/json", "Accept": "application/json"],
             body: try JSONEncoder().encode(Body(client_name: clientName, redirect_uris: [redirectURI]))
         ))
-        guard (200..<300).contains(response.statusCode) else { throw MCPOAuthError.registrationFailed(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else {
+            throw MCPOAuthError.registrationFailed(status: response.statusCode, detail: response.diagnostic)
+        }
         guard let decoded = try? JSONDecoder().decode(Response.self, from: response.body) else {
-            throw MCPOAuthError.registrationFailed(status: response.statusCode)
+            throw MCPOAuthError.registrationFailed(status: response.statusCode, detail: response.diagnostic)
         }
         return (decoded.client_id, decoded.client_secret)
     }

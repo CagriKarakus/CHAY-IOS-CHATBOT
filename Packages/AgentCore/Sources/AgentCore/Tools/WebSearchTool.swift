@@ -120,7 +120,7 @@ public struct WebSearchTool: Tool {
     static func isAccountProblem(_ error: ToolError) -> Bool {
         switch error {
         case .missingAPIKey: true
-        case let .http(status): [401, 403, 429, 432, 433].contains(status)
+        case let .http(status, _): [401, 403, 429, 432, 433].contains(status)
         default: false
         }
     }
@@ -210,7 +210,7 @@ public struct WebSearchTool: Tool {
             ))
             // DuckDuckGo şüphelendiğinde 202 ile doğrulama (CAPTCHA) sayfası döndürür.
             if response.statusCode == 202 { throw ToolError.searchBlocked(service: backend.serviceName) }
-            guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+            guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
             let html = String(decoding: response.body, as: UTF8.self)
             let results = try Self.duckDuckGoResults(html)
             if results.isEmpty, html.contains("anomaly-modal") || html.contains("challenge-form") {
@@ -260,7 +260,7 @@ public struct WebSearchTool: Tool {
 
     private func fetch<T: Decodable>(_ request: HTTPRequest) async throws -> T {
         let response = try await transport.send(request)
-        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
         return try JSONDecoder().decode(T.self, from: response.body)
     }
 

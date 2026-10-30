@@ -21,7 +21,7 @@ public enum ConnectorRegistry {
         ]
         guard let url = components.url else { throw ToolError.invalidURL }
         let response = try await transport.send(HTTPRequest(url: url, method: "GET", headers: ["Accept": "application/json"], body: nil))
-        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
         return parse(response.body)
     }
 

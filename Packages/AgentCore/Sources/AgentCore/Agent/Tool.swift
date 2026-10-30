@@ -74,7 +74,7 @@ public struct Source: Hashable, Codable, Sendable {
 public enum ToolError: Error, Equatable, Sendable {
     case invalidArguments
     case missingAPIKey(service: String)
-    case http(status: Int)
+    case http(status: Int, detail: String? = nil)
     case invalidURL
     case unsupportedContent(String)
     case invalidFilename
@@ -90,15 +90,15 @@ extension ToolError: LocalizedError {
             return "Invalid tool arguments."
         case let .missingAPIKey(service):
             return "\(service) API key is not set. The user must enter it in Settings."
-        case .http(401), .http(403):
+        case .http(401, _), .http(403, _):
             return "Access denied (the API key may be invalid)."
-        case .http(404):
+        case .http(404, _):
             return "HTTP error 404: not found. The address may be wrong."
-        case .http(429):
+        case .http(429, _):
             return "HTTP error 429: rate limit or quota reached. Try later or another way."
-        case let .http(status) where (500..<600).contains(status):
+        case let .http(status, _) where (500..<600).contains(status):
             return "HTTP error \(status): a problem on the server. It may work later."
-        case let .http(status):
+        case let .http(status, _):
             return "HTTP error \(status)."
         case .invalidURL:
             return "Invalid address; only https:// URLs can be read."
@@ -111,6 +111,17 @@ extension ToolError: LocalizedError {
         case let .searchBlocked(service):
             return "\(service) is temporarily blocking automated searches. Try again later, or the user can switch the search service in Settings."
         }
+    }
+}
+
+extension ToolError: ServerDetailError {
+    public var serverDetail: String? {
+        if case let .http(_, detail) = self { detail } else { nil }
+    }
+
+    /// 2xx dışı yanıttan hata; gövde varsa kısa özeti modele ayrıntı olarak gider.
+    static func httpFailure(_ response: HTTPResponse) -> ToolError {
+        .http(status: response.statusCode, detail: response.body.isEmpty ? nil : response.diagnostic)
     }
 }
 

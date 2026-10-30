@@ -44,7 +44,7 @@ public struct FetchPageTool: Tool {
             body: nil
         )
         let response = try await transport.send(request)
-        guard (200..<300).contains(response.statusCode) else { throw ToolError.http(status: response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
 
         let contentType = response.contentType?.lowercased() ?? "text/html"
         let body = String(data: response.body, encoding: .utf8) ?? String(decoding: response.body, as: UTF8.self)
