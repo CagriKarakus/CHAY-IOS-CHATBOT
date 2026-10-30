@@ -6,10 +6,11 @@
 
 ## İndirme
 
-Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. `.ipa` dosyasını [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasından indirip Sideloadly ile yükle ([iPhone'a yükleme](#iphonea-yükleme) bölümüne bak). Uygulama App Store'da yok.
+Son sürüm **[v1.4](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. `.ipa` dosyasını [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) sayfasından indirip Sideloadly ile yükle ([iPhone'a yükleme](#iphonea-yükleme) bölümüne bak). Uygulama App Store'da yok.
 
 | Sürüm | Öne çıkanlar |
 | --- | --- |
+| v1.4 | Cevap yazılırken sohbetler arası geçiş, kişiselleştirme ekranı, dokümanlarda arama, taranmış PDF'lerin cihazda okunması, isteğe bağlı sağlayıcı web araması, daha güvenli web okuma ve bağlayıcı girişi, dışarıya veri gönderemeyen artifact'ler, Türkçe sistem metinleri, erişilebilirlik ve veri kaybı düzeltmeleri |
 | v1.3 | Güvenli giriş penceresiyle sohbetten servis bağlama, sağlayıcı başına yedek modeller, asistanın değerlendirebildiği daha net araç hataları, CRLF kullanan MCP sunucuları için düzeltme |
 | v1.2 | iOS 26+ için arka planda devam eden cevaplar, zamanlanmış görevler (bildirim veya Kestirmeler otomasyonu), zamanlanmış görevlerin yedeğe eklenmesi |
 | v1.1 | Claude tarzı kenar menüsü ve sohbet menüsü (sabitle, yeniden adlandır, paylaş, projeye taşı), cevap alternatifleri (‹ 1/2 ›), yedek modelli model başına token limitleri, tarayıcıyla girişli MCP bağlayıcıları, key gerektirmeyen DuckDuckGo araması |
@@ -27,6 +28,7 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - **Token limitleri**: model başına günlük ve aylık limit (giriş + çıkış tokenları); limit dolunca istekler yenilenene kadar seçtiğin yedek modele gider, yedek seçilmediyse sorulur
 - **Yedek modeller**: her sağlayıcıya sıralı bir yedek listesi ver; başka sağlayıcıların modelleri de olabilir. Sağlayıcı yoğunsa, sunucu sorunu varsa veya ulaşılamıyorsa cevap sıradaki modelle sürer ve sonraki mesajda asıl modele dönülür. Yedeği sohbette isteyerek de seçebilirsin
 - **Uzun sohbetler**: bağlam büyüyünce eski araç sonuçları kısaltılır, eski mesajlar özetlenir
+- **Süren sohbetler**: Cevap yazılırken başka sohbete geçebilir veya yeni sohbet açabilirsin. Cevap devam eder ve kaydedilir; kenar menüsü hangi sohbetlerin cevap yazdığını veya onayını beklediğini gösterir. Gizli sohbet, kaydı olmadığı için cevabı bitene kadar açık kalır
 
 ### Araçlar
 - **Web araştırması**: Tavily, Brave Search, kendi SearXNG sunucun veya **key gerektirmeyen DuckDuckGo**; isteğe bağlı olarak destekleyen sağlayıcının kendi araması (OpenRouter). Tavily veya Brave key'i yoksa, geçersizse ya da kota bittiyse aramalar kendiliğinden DuckDuckGo ile yapılır
@@ -49,7 +51,7 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - **Kişiselleştirme**: asistanın üslubunu, sıcaklığını, coşkusunu, emoji kullanımını ve görsel cevaplarını seç, özel talimatlar ekle. Her modelle çalışır
 - **Doküman araması**: asistan cevap için kayıtlı dokümanlarında arama yapabilir
 - **Görünüm**: sistem, açık veya koyu (Atom One paleti)
-- **İngilizce ve Türkçe** arayüz
+- **İngilizce ve Türkçe** arayüz; iOS izin pencereleri ve Kestirmeler dahil
 
 ### Günlük kullanım
 - **Kestirmeler**: *Ask CHAY* eylemi bir komutu (ve ekran görüntüsü gibi dosyaları) seçtiğin modelle gönderir; ör. her sabah 07:00'de haber özeti
@@ -61,11 +63,14 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 ## Güvenlik
 
 - API key'ler, bağlayıcı token'ları ve OAuth bilgileri sadece Keychain'de (`WhenUnlockedThisDeviceOnly`) saklanır ve hiçbir zaman loglanmaz
-- Sadece HTTPS; App Transport Security istisnası yok
+- Sadece HTTPS; App Transport Security istisnası yok. Bağlayıcı girişi yalnızca HTTPS uçlarını ve o sunucuya ait giriş bilgilerini kabul eder
+- Sayfa okuma, yerel ağ adreslerini ve onlara yönlendirmeleri reddeder; indirmeyi 2 MB'ta durdurur
 - Asistanın bulduğu bağlayıcılar senin onayın olmadan eklenemez; kontrol edilmiş liste dışındaki adresler "doğrulanmamış" olarak gösterilir, yerel ağ adresleri reddedilir
-- Web sayfaları ve bağlayıcı sonuçları modele açıkça işaretlenmiş veri olarak, içindeki talimatlara uymaması söylenerek verilir
+- Web sayfaları ve bağlayıcı sonuçları modele açıkça işaretlenmiş veri olarak, içindeki talimatlara uymaması söylenerek verilir; bu işareti kendileri kapatamaz. Eski mesajların özetleri de güvenilmez sayılır
 - Web içeriği okunduktan sonra hafızaya kayıt senin onayını ister; veri değiştirebilen bağlayıcı araçları çalışmadan önce sorar
+- Web içeriği okunduktan sonra, senin veya bir aracın sohbette vermediği bir adres açılmadan önce sorulur; çünkü adres sohbetteki bilgileri dışarı taşıyabilir
 - Dosya araçları sadece uygulamanın Documents klasörüne düz adlarla yazabilir
+- Artifact'ler ağ isteği yapamaz ve dış görsel yükleyemez; kütüphaneler yalnızca bilinen CDN'lerden alınabilir
 - Her istekte model çağrısı sayısı sabit bir sınırla kısıtlıdır
 
 ## Mimari

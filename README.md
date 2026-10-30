@@ -6,10 +6,11 @@ A native iOS assistant that runs on **your own LLM API key**. It researches the 
 
 ## Download
 
-The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. Download the `.ipa` from [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and install it with Sideloadly (see [Installing on an iPhone](#installing-on-an-iphone)). The app is not on the App Store.
+The latest version is **[v1.4](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. Download the `.ipa` from [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and install it with Sideloadly (see [Installing on an iPhone](#installing-on-an-iphone)). The app is not on the App Store.
 
 | Version | Highlights |
 | --- | --- |
+| v1.4 | Switch chats while a reply is running, personalization screen, document search, scanned PDFs read on the device, optional provider web search, safer web reading and connector sign-in, artifacts that can't send data out, Turkish system prompts, accessibility and data-loss fixes |
 | v1.3 | Connect services from the chat with a secure sign-in window, fallback models per provider, clearer tool errors the assistant can act on, fix for MCP servers using CRLF |
 | v1.2 | Answers keep running in the background on iOS 26+, scheduled tasks (notification or Shortcuts automation), scheduled tasks in backups |
 | v1.1 | Claude-style sidebar and chat menu (pin, rename, share, move to project), reply alternatives (‹ 1/2 ›), per-model token limits with a fallback model, MCP connectors with browser sign-in, keyless DuckDuckGo search |
@@ -27,6 +28,7 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Token limits**: set daily and monthly limits (input + output tokens) per model; when one is reached, requests go to a fallback model you chose until the limit resets, or you are asked to pick one
 - **Fallback models**: give each provider an ordered list of backup models, including models from other providers. If it's overloaded, has a server problem or can't be reached, the reply continues on the next model and returns to the main model on your next message. You can also set a fallback by asking in the chat
 - **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
+- **Chats keep running**: switch chats or start a new one while a reply is being written. The reply continues and is saved, and the sidebar shows which chats are answering or waiting for your approval. An incognito chat stays open until its reply finishes, because it has no saved copy to return to
 
 ### Tools
 - **Web research** with Tavily, Brave Search, your own SearXNG or **DuckDuckGo with no key**, or optionally the provider's own search where available (OpenRouter). If the Tavily or Brave key is missing, invalid or out of quota, searches fall back to DuckDuckGo automatically
@@ -49,7 +51,7 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Personalization**: choose the assistant's style, warmth, enthusiasm, emoji and visual answers, and add custom instructions. They work with every model
 - **Document search**: the assistant can search your saved documents for answers
 - **Appearance**: system, light or dark (Atom One palette)
-- **English and Turkish** interface
+- **English and Turkish** interface, including iOS permission prompts and Shortcuts
 
 ### Everyday use
 - **Shortcuts**: the *Ask CHAY* action sends a prompt (and files such as screenshots) with the model you choose, e.g. a daily news summary at 7:00
@@ -61,11 +63,14 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 ## Security
 
 - API keys, connector tokens and OAuth credentials are stored only in the Keychain (`WhenUnlockedThisDeviceOnly`) and never logged
-- HTTPS only; no App Transport Security exceptions
+- HTTPS only; no App Transport Security exceptions. Connector sign-in only accepts HTTPS endpoints and sign-in details that belong to that server
+- Page reading refuses local network addresses, including redirects to them, and stops at 2 MB
 - Connectors found by the assistant can't be added without your confirmation; addresses outside the checked list are marked unverified, and local network addresses are refused
-- Web pages and connector results are passed to the model as clearly marked data with an instruction not to follow it
+- Web pages and connector results are passed to the model as clearly marked data with an instruction not to follow it, and they can't close that marking themselves. Summaries of older messages count as untrusted too
 - After web content was read, saving to memory requires your approval; connector tools that may change data ask before running
+- After web content was read, opening an address that neither you nor a tool gave in the chat asks first, because the address could carry information out of the chat
 - The file tools can only write plain names inside the app's Documents folder
+- Artifacts can't make network requests or load remote images; only known CDNs can supply libraries
 - Each request is capped at a fixed number of model calls
 
 ## Architecture
