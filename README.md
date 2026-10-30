@@ -6,10 +6,11 @@ A native iOS assistant that runs on **your own LLM API key**. It researches the 
 
 ## Download
 
-The latest version is **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. Download the `.ipa` from [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and install it with Sideloadly (see [Installing on an iPhone](#installing-on-an-iphone)). The app is not on the App Store.
+The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/latest)**. Download the `.ipa` from [Releases](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases) and install it with Sideloadly (see [Installing on an iPhone](#installing-on-an-iphone)). The app is not on the App Store.
 
 | Version | Highlights |
 | --- | --- |
+| v1.3 | Connect services from the chat with a secure sign-in window, fallback models per provider, clearer tool errors the assistant can act on, fix for MCP servers using CRLF |
 | v1.2 | Answers keep running in the background on iOS 26+, scheduled tasks (notification or Shortcuts automation), scheduled tasks in backups |
 | v1.1 | Claude-style sidebar and chat menu (pin, rename, share, move to project), reply alternatives (‹ 1/2 ›), per-model token limits with a fallback model, MCP connectors with browser sign-in, keyless DuckDuckGo search |
 | v1.0 | First stable build |
