@@ -683,14 +683,21 @@ struct ChatView: View {
         .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
     }
 
-    /// Yoğunluk hatasında: yedek seçilmemişse uyarı ve seçim menüsü.
+    /// Yoğunluk hatasında: kullanılabilir yedek yoksa uyarı ve seçim menüsü.
     private var fallbackPrompt: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(L("This provider has no fallback model.", "Bu sağlayıcı için yedek model seçilmemiş."))
+        let hasList = viewModel.fallbackPromptProviderID.map { !settings.fallbacks(for: $0).isEmpty } ?? false
+        let options = settings.allModels.filter { viewModel.canServeAsFallback($0.model, using: settings) }
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(hasList
+                 ? L("No fallback model can be used for this chat.", "Bu sohbet için kullanılabilecek yedek model yok.")
+                 : L("This provider has no fallback model.", "Bu sağlayıcı için yedek model seçilmemiş."))
                 .foregroundStyle(Palette.yellow)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Menu(L("Choose", "Seç")) {
-                ForEach(settings.allModels.filter { $0.model.generatesImages != true && $0.model.id != settings.selection(for: viewModel.modelOverrideID)?.model.id }) { option in
+                if options.isEmpty {
+                    Text(L("No suitable model", "Uygun model yok"))
+                }
+                ForEach(options) { option in
                     Button("\(option.model.name) · \(option.provider.name)") {
                         viewModel.chooseFallback(option.model.id, using: settings)
                     }

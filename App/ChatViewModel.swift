@@ -127,7 +127,7 @@ final class ChatViewModel {
     private(set) var limitPrompt: LimitPrompt?
     /// Kurulum penceresi açıkken dolu.
     private(set) var pendingConnectorSetup: PendingConnectorSetup?
-    /// Yoğunluk hatası aldı ama yedeği seçilmemiş sağlayıcı; hata satırında yedek seçme menüsü gösterilir.
+    /// Yoğunluk hatası aldı ama kullanılabilir yedeği olmayan sağlayıcı; hata satırında yedek seçme menüsü gösterilir.
     private(set) var fallbackPromptProviderID: UUID?
     private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
@@ -176,6 +176,8 @@ final class ChatViewModel {
     private var turnModelID: UUID?
     /// Yedek modele geçildiyse cevabın üstüne yazılacak not.
     private var limitNotice: String?
+    /// Bu turda denenebilecek yedek sayısı; görsel üretiminde yedek olmadığı için `nil`.
+    private var turnFallbackCount: Int?
     /// Henüz `.message` olarak gelmemiş, akmakta olan adımın metni (durdurulursa geçmişe eklenir).
     private var pendingStepText = ""
     private var turnTask: Task<Void, Never>?
@@ -542,33 +544,35 @@ final class ChatViewModel {
             resumeOnForeground = true
         } else {
             errorMessage = userFacingMessage(for: error)
-            if isTemporaryFailure(error), let providerID = currentModel?.providerID,
-               lastSettings?.fallbacks(for: providerID).isEmpty == true {
-                fallbackPromptProviderID = providerID
+            if isTemporaryFailure(error), turnFallbackCount == 0 {
+                fallbackPromptProviderID = currentModel?.providerID
             }
         }
     }
 
     // MARK: - Yedek model
 
-    /// Bu istekte denenebilecek yedekler: limiti dolmuş veya gereken yeteneği olmayan modeller atlanır.
+    /// Model bu sohbette yedek olabilir mi: görsel üreten, gereken eki okuyamayan veya limiti dolmuş modeller olamaz.
+    func canServeAsFallback(_ model: ModelProfile, using settings: AppSettings) -> Bool {
+        let attachments = history.flatMap { $0.attachments ?? [] }
+        return model.id != settings.selection(for: turnModelID)?.model.id
+            && model.generatesImages != true
+            && (model.acceptsImages == true || !attachments.contains { $0.kind == .image })
+            && (model.acceptsAudio == true || !attachments.contains { $0.kind == .audio })
+            && usageTracker?.exceededLimit(of: model) == nil
+    }
+
+    /// Bu istekte denenebilecek yedekler, sırayla.
     private func fallbackModels(
         for selected: (provider: Provider, model: ModelProfile),
         settings: AppSettings,
         transport: any HTTPTransport
     ) -> [FallbackModel] {
-        let attachments = history.flatMap { $0.attachments ?? [] }
-        let needsImages = attachments.contains { $0.kind == .image }
-        let needsAudio = attachments.contains { $0.kind == .audio }
-        return settings.fallbacks(for: selected.provider.id).compactMap { option in
-            let model = option.model
-            guard model.id != selected.model.id, model.generatesImages != true,
-                  !needsImages || model.acceptsImages == true,
-                  !needsAudio || model.acceptsAudio == true,
-                  usageTracker?.exceededLimit(of: model) == nil,
-                  let configuration = try? settings.configuration(modelID: model.id)
+        settings.fallbacks(for: selected.provider.id).compactMap { option in
+            guard canServeAsFallback(option.model, using: settings),
+                  let configuration = try? settings.configuration(modelID: option.model.id)
             else { return nil }
-            return FallbackModel(id: model.id, name: model.name, client: LLMClient(configuration: configuration, transport: transport))
+            return FallbackModel(id: option.model.id, name: option.model.name, client: LLMClient(configuration: configuration, transport: transport))
         }
     }
 
@@ -765,6 +769,7 @@ final class ChatViewModel {
             errorMessage = userFacingMessage(for: error)
             return
         }
+        turnFallbackCount = nil
         var reply = ChatItem(role: .assistant, text: "")
         reply.notice = limitNotice
         reply.activities = [ToolActivity(id: "image-\(reply.id)", toolName: "generate_image", title: L("Generating image", "Görsel üretiliyor"))]
@@ -868,6 +873,7 @@ final class ChatViewModel {
         }
         let baseTools = tools
         let fallbacks = fallbackModels(for: selected, settings: settings, transport: transport)
+        turnFallbackCount = fallbacks.count
         let connectorSelection = selectedConnectorIDs
         let connectorSummary = connectorLibrary?.connectors.map { (name: $0.name, active: isConnectorActive($0)) } ?? []
         let userInstructions = settings.userInstructions
