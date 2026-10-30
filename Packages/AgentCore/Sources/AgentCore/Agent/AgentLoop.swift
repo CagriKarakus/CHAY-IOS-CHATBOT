@@ -14,6 +14,21 @@ public enum AgentEvent: Equatable, Sendable {
     case message(ChatMessage)
     /// Bir model çağrısının token kullanımı (adım başına bir kez).
     case usage(TokenUsage)
+    /// Model hata verdi, sıradaki yedekle devam ediliyor. Yarıda kalan adımın metni geçersizdir.
+    case modelSwitched(id: UUID, name: String)
+}
+
+/// Asıl model yoğunluk veya sunucu hatası verince sırayla denenen model.
+public struct FallbackModel: Sendable {
+    public let id: UUID
+    public let name: String
+    let client: LLMClient
+
+    public init(id: UUID, name: String, client: LLMClient) {
+        self.id = id
+        self.name = name
+        self.client = client
+    }
 }
 
 /// Kullanıcıdan onay istenen araç çağrısı.
@@ -34,22 +49,30 @@ public struct AgentLoop: Sendable {
     private let maxSteps: Int
     private let approve: Approver
     private let refreshTools: (@Sendable () async -> [any Tool])?
+    private let fallbacks: [FallbackModel]
+    private let shouldFallBack: @Sendable (any Error) async -> Bool
 
     /// `maxSteps`: bir istekte modele en fazla kaç kez gidileceği. Son adımda araç verilmez, model cevap vermek zorunda kalır.
     /// `approve`: onay gerektiren araç çağrılarında kullanıcıya sorar; verilmezse bu çağrılar reddedilir.
     /// `refreshTools`: her adımdan önce güncel araç listesini verir (ör. turda yeni bağlanan bağlayıcılar için).
+    /// `fallbacks`: model hata verince sırayla denenir; turun kalanı çalışan modelle sürer.
+    /// `shouldFallBack`: hatanın yedeğe geçirip geçirmeyeceği.
     public init(
         client: LLMClient,
         tools: [any Tool],
         maxSteps: Int = 8,
         approve: @escaping Approver = { _ in false },
-        refreshTools: (@Sendable () async -> [any Tool])? = nil
+        refreshTools: (@Sendable () async -> [any Tool])? = nil,
+        fallbacks: [FallbackModel] = [],
+        shouldFallBack: @escaping @Sendable (any Error) async -> Bool = { ($0 as? LLMError)?.isTemporary ?? false }
     ) {
         self.client = client
         self.tools = Self.index(tools)
         self.maxSteps = max(1, maxSteps)
         self.approve = approve
         self.refreshTools = refreshTools
+        self.fallbacks = fallbacks
+        self.shouldFallBack = shouldFallBack
     }
 
     private static func index(_ tools: [any Tool]) -> [String: any Tool] {
@@ -73,6 +96,8 @@ public struct AgentLoop: Sendable {
     private func loop(_ messages: [ChatMessage], emit: (AgentEvent) -> Void) async throws {
         var conversation = messages
         var tools = self.tools
+        var activeClient = client
+        var remainingFallbacks = fallbacks[...]
 
         for step in 1...maxSteps {
             if let refreshTools {
@@ -83,19 +108,33 @@ public struct AgentLoop: Sendable {
             var calls: [ToolCall] = []
             let offeredTools = step < maxSteps ? definitions : []
 
-            for try await event in client.streamChat(conversation, tools: offeredTools) {
-                switch event {
-                case let .text(delta):
-                    text += delta
-                    emit(.text(delta))
-                case let .toolCalls(requested):
-                    calls = requested
-                case let .usage(usage):
-                    emit(.usage(usage))
-                case let .reasoning(thought):
-                    emit(.reasoning(thought))
-                case let .toolCallProgress(name, characters):
-                    emit(.preparingTool(name: name, characters: characters))
+            attempts: while true {
+                do {
+                    for try await event in activeClient.streamChat(conversation, tools: offeredTools) {
+                        switch event {
+                        case let .text(delta):
+                            text += delta
+                            emit(.text(delta))
+                        case let .toolCalls(requested):
+                            calls = requested
+                        case let .usage(usage):
+                            emit(.usage(usage))
+                        case let .reasoning(thought):
+                            emit(.reasoning(thought))
+                        case let .toolCallProgress(name, characters):
+                            emit(.preparingTool(name: name, characters: characters))
+                        }
+                    }
+                    break attempts
+                } catch {
+                    guard !Task.isCancelled, !(error is CancellationError),
+                          let next = remainingFallbacks.first, await shouldFallBack(error)
+                    else { throw error }
+                    remainingFallbacks.removeFirst()
+                    activeClient = next.client
+                    text = ""
+                    calls = []
+                    emit(.modelSwitched(id: next.id, name: next.name))
                 }
             }
 

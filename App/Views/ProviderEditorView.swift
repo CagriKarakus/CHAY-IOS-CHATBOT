@@ -124,6 +124,8 @@ struct ProviderEditorView: View {
             }
             .listRowBackground(Palette.surface)
 
+            fallbackSection
+
             if let errorMessage {
                 Section {
                     Text(errorMessage)
@@ -179,6 +181,68 @@ struct ProviderEditorView: View {
                     .map { HeaderField(name: $0.key, value: $0.value) }
             }
         }
+    }
+
+    /// Sıralı yedek modeller; listeden silinmiş modeller gösterilmez.
+    private var fallbackOptions: [ModelOption] {
+        (draft.fallbackModelIDs ?? []).compactMap { id in settings.allModels.first { $0.model.id == id } }
+    }
+
+    private var fallbackSection: some View {
+        Section {
+            ForEach(Array(fallbackOptions.enumerated()), id: \.element.id) { index, option in
+                HStack {
+                    Text(verbatim: "\(index + 1).")
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.textMuted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(option.model.name)
+                        Text(option.provider.name)
+                            .font(.caption)
+                            .foregroundStyle(Palette.textMuted)
+                    }
+                    Spacer()
+                    if index > 0 {
+                        Button {
+                            moveFallback(option.id, before: fallbackOptions[index - 1].id)
+                        } label: {
+                            Image(systemName: "arrow.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(L("Move up", "Yukarı taşı"))
+                    }
+                }
+            }
+            .onDelete { offsets in
+                let removed = Set(offsets.map { fallbackOptions[$0].id })
+                draft.fallbackModelIDs?.removeAll { removed.contains($0) }
+            }
+            Menu {
+                ForEach(settings.allModels.filter { option in
+                    option.model.generatesImages != true && !(draft.fallbackModelIDs ?? []).contains(option.model.id)
+                }) { option in
+                    Button("\(option.model.name) · \(option.provider.name)") {
+                        draft.fallbackModelIDs = (draft.fallbackModelIDs ?? []) + [option.model.id]
+                    }
+                }
+            } label: {
+                Label(L("Add Fallback Model", "Yedek model ekle"), systemImage: "plus")
+            }
+        } header: {
+            header(L("Fallback models", "Yedek modeller"))
+        } footer: {
+            footer(L(
+                "When this provider is overloaded, has a server problem or can't be reached, requests go to these models in order, for that reply only. Models from other providers work too. Wrong API keys or model names don't trigger this.",
+                "Bu sağlayıcı yoğunsa, sunucu sorunu varsa veya ulaşılamıyorsa istekler sırayla bu modellere gider; sadece o cevap için. Başka sağlayıcıların modelleri de seçilebilir. Yanlış API key veya model adı yedeğe geçirmez."
+            ))
+        }
+        .listRowBackground(Palette.surface)
+    }
+
+    private func moveFallback(_ id: UUID, before other: UUID) {
+        guard var ids = draft.fallbackModelIDs, let from = ids.firstIndex(of: id), let to = ids.firstIndex(of: other) else { return }
+        ids.swapAt(from, to)
+        draft.fallbackModelIDs = ids
     }
 
     private func addModel() {

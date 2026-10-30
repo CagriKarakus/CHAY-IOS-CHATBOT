@@ -10,6 +10,8 @@ struct Provider: Codable, Identifiable, Hashable {
     var models: [ModelProfile]
     /// Başlangıçta seçilen hazır ayar (`ProviderPreset.id`); bakiye gösterimi gibi sağlayıcıya özel işler için.
     var preset: String?
+    /// Bu sağlayıcı yoğunken veya çalışmazken sırayla denenecek modeller. Eski kayıtlarda yok.
+    var fallbackModelIDs: [UUID]?
 }
 
 struct ModelProfile: Codable, Identifiable, Hashable {
@@ -181,6 +183,22 @@ final class AppSettings {
     /// Tüm sağlayıcılardaki modeller.
     var allModels: [ModelOption] {
         providers.flatMap { provider in provider.models.map { ModelOption(provider: provider, model: $0) } }
+    }
+
+    /// Sağlayıcının sıralı yedekleri; silinmiş modeller atlanır.
+    func fallbacks(for providerID: UUID) -> [ModelOption] {
+        let ids = providers.first { $0.id == providerID }?.fallbackModelIDs ?? []
+        return ids.compactMap { id in allModels.first { $0.model.id == id } }
+    }
+
+    /// Modeli sağlayıcının yedek listesinin sonuna ekler; zaten varsa yerinde kalır.
+    func addFallback(_ modelID: UUID, to providerID: UUID) {
+        guard let index = providers.firstIndex(where: { $0.id == providerID }) else { return }
+        var ids = providers[index].fallbackModelIDs ?? []
+        guard !ids.contains(modelID) else { return }
+        ids.append(modelID)
+        providers[index].fallbackModelIDs = ids
+        persistProviders()
     }
 
     // MARK: - Düzenleme

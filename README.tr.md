@@ -24,6 +24,7 @@ Son sürüm **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - `/images/generations` destekleyen modellerle **görsel üretme**, telefonun kendi sesleriyle **sesli okuma**
 - Mesajları **düzenleme ve yeniden üretme** (aynı veya başka bir modelle); önceki sürümler saklanır ve ‹ 1/2 › ile aralarında geçilir
 - **Token limitleri**: model başına günlük ve aylık limit (giriş + çıkış tokenları); limit dolunca istekler yenilenene kadar seçtiğin yedek modele gider, yedek seçilmediyse sorulur
+- **Yedek modeller**: her sağlayıcıya sıralı bir yedek listesi ver; başka sağlayıcıların modelleri de olabilir. Sağlayıcı yoğunsa, sunucu sorunu varsa veya ulaşılamıyorsa cevap sıradaki modelle sürer ve sonraki mesajda asıl modele dönülür. Yedeği sohbette isteyerek de seçebilirsin
 - **Uzun sohbetler**: bağlam büyüyünce eski araç sonuçları kısaltılır, eski mesajlar özetlenir
 
 ### Araçlar

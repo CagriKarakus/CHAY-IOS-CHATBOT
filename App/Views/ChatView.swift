@@ -142,6 +142,9 @@ struct ChatView: View {
                     .font(.footnote)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
+                    if viewModel.fallbackPromptProviderID != nil {
+                        fallbackPrompt
+                    }
                 }
                 composer
             }
@@ -678,6 +681,27 @@ struct ChatView: View {
         }
         .disabled(viewModel.isStreaming || recorder.isRecording)
         .accessibilityLabel(L("Attach and options", "Ekle ve seçenekler"))
+    }
+
+    /// Yoğunluk hatasında: yedek seçilmemişse uyarı ve seçim menüsü.
+    private var fallbackPrompt: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(L("This provider has no fallback model.", "Bu sağlayıcı için yedek model seçilmemiş."))
+                .foregroundStyle(Palette.yellow)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Menu(L("Choose", "Seç")) {
+                ForEach(settings.allModels.filter { $0.model.generatesImages != true && $0.model.id != settings.selection(for: viewModel.modelOverrideID)?.model.id }) { option in
+                    Button("\(option.model.name) · \(option.provider.name)") {
+                        viewModel.chooseFallback(option.model.id, using: settings)
+                    }
+                }
+            }
+            .fontWeight(.semibold)
+            .foregroundStyle(Palette.blue)
+        }
+        .font(.footnote)
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
     }
 
     private var limitTitle: String {

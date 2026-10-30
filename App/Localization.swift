@@ -65,6 +65,7 @@ func activityTitle(toolName: String, detail: String?) -> String {
     case "create_artifact": L("Creating page", "Sayfa oluşturuluyor")
     case "find_connector": L("Finding connector", "Bağlayıcı aranıyor")
     case "connect_connector": L("Connecting", "Bağlanıyor")
+    case "set_fallback_model": L("Setting fallback model", "Yedek model ayarlanıyor")
     case let name where name.hasPrefix("mcp_"): L("Using", "Kullanılıyor")
     default: toolName
     }

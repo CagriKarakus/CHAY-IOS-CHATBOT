@@ -127,6 +127,8 @@ final class ChatViewModel {
     private(set) var limitPrompt: LimitPrompt?
     /// Kurulum penceresi açıkken dolu.
     private(set) var pendingConnectorSetup: PendingConnectorSetup?
+    /// Yoğunluk hatası aldı ama yedeği seçilmemiş sağlayıcı; hata satırında yedek seçme menüsü gösterilir.
+    private(set) var fallbackPromptProviderID: UUID?
     private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
     private(set) var conversationID: UUID?
@@ -262,6 +264,7 @@ final class ChatViewModel {
         lastPromptTokens = nil
         conversationID = nil
         errorMessage = nil
+        fallbackPromptProviderID = nil
         isIncognito = incognito
         projectID = incognito ? nil : project?.id
         projectName = incognito ? nil : project?.name
@@ -539,7 +542,86 @@ final class ChatViewModel {
             resumeOnForeground = true
         } else {
             errorMessage = userFacingMessage(for: error)
+            if isTemporaryFailure(error), let providerID = currentModel?.providerID,
+               lastSettings?.fallbacks(for: providerID).isEmpty == true {
+                fallbackPromptProviderID = providerID
+            }
         }
+    }
+
+    // MARK: - Yedek model
+
+    /// Bu istekte denenebilecek yedekler: limiti dolmuş veya gereken yeteneği olmayan modeller atlanır.
+    private func fallbackModels(
+        for selected: (provider: Provider, model: ModelProfile),
+        settings: AppSettings,
+        transport: any HTTPTransport
+    ) -> [FallbackModel] {
+        let attachments = history.flatMap { $0.attachments ?? [] }
+        let needsImages = attachments.contains { $0.kind == .image }
+        let needsAudio = attachments.contains { $0.kind == .audio }
+        return settings.fallbacks(for: selected.provider.id).compactMap { option in
+            let model = option.model
+            guard model.id != selected.model.id, model.generatesImages != true,
+                  !needsImages || model.acceptsImages == true,
+                  !needsAudio || model.acceptsAudio == true,
+                  usageTracker?.exceededLimit(of: model) == nil,
+                  let configuration = try? settings.configuration(modelID: model.id)
+            else { return nil }
+            return FallbackModel(id: model.id, name: model.name, client: LLMClient(configuration: configuration, transport: transport))
+        }
+    }
+
+    /// iOS'un arka planda kestiği bağlantı model sorunu değildir; dönünce kaldığı yerden sürer.
+    private func canFallBack(after error: any Error) -> Bool {
+        if backgroundedDuringTurn, continuedTurn == nil, error is URLError { return false }
+        return isTemporaryFailure(error)
+    }
+
+    /// Hata satırındaki menü: modeli yedek yapar ve isteği yeniden dener.
+    func chooseFallback(_ modelID: UUID, using settings: AppSettings) {
+        guard let providerID = fallbackPromptProviderID else { return }
+        fallbackPromptProviderID = nil
+        settings.addFallback(modelID, to: providerID)
+        retry(using: settings)
+    }
+
+    /// `set_fallback_model` aracı: adı kayıtlı modellerle eşleştirir, sonucu modele metin olarak döndürür.
+    private func setFallbackFromChat(model name: String, provider providerName: String?) -> String {
+        guard let settings = lastSettings else { return "Settings aren't available." }
+        let saved = settings.allModels.filter { $0.model.generatesImages != true }
+        let available = saved.map { "\($0.model.name) (\($0.provider.name))" }.joined(separator: ", ")
+
+        func matches(_ text: String, _ query: String) -> Bool { text.localizedCaseInsensitiveContains(query) }
+        let target = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let exact = saved.filter { $0.model.name.caseInsensitiveCompare(target) == .orderedSame }
+        let found = exact.isEmpty ? saved.filter { matches($0.model.name, target) } : exact
+        guard let option = found.first else {
+            return "No saved model matches '\(target)'. Saved models: \(available). Tell the user; a new model must be added in Settings first."
+        }
+        guard found.count == 1 else {
+            let names = found.map { "\($0.model.name) (\($0.provider.name))" }.joined(separator: ", ")
+            return "'\(target)' matches several models: \(names). Ask the user which one they mean."
+        }
+
+        let providerID: UUID?
+        if let providerName, !providerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let query = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            providerID = settings.providers.first { matches($0.name, query) }?.id
+            guard providerID != nil else {
+                let names = settings.providers.map(\.name).joined(separator: ", ")
+                return "No provider matches '\(query)'. Providers: \(names)."
+            }
+        } else {
+            providerID = settings.selection(for: modelOverrideID)?.provider.id
+        }
+        guard let providerID, let provider = settings.providers.first(where: { $0.id == providerID }) else {
+            return "No provider is selected."
+        }
+        settings.addFallback(option.model.id, to: provider.id)
+        fallbackPromptProviderID = nil
+        let order = settings.fallbacks(for: provider.id).map(\.model.name).joined(separator: " → ")
+        return "\(option.model.name) is now a fallback for \(provider.name). Fallback order: \(order)."
     }
 
     private func endTurn() {
@@ -656,6 +738,7 @@ final class ChatViewModel {
         }
 
         let attachments = pendingAttachments
+        fallbackPromptProviderID = nil
         input = ""
         pendingAttachments = []
         errorMessage = nil
@@ -726,6 +809,7 @@ final class ChatViewModel {
     func retry(using settings: AppSettings) {
         guard canRetry, resolveTurnModel(for: .retry, using: settings) else { return }
         errorMessage = nil
+        fallbackPromptProviderID = nil
         if settings.selection(for: turnModelID)?.model.generatesImages == true, let prompt = history.last(where: { $0.role == .user })?.content {
             generateImage(prompt: prompt, using: settings)
         } else {
@@ -772,6 +856,9 @@ final class ChatViewModel {
             ConnectConnectorTool(transport: transport) { [weak self] proposal in
                 await self?.setUpConnector(proposal) ?? .declined
             },
+            SetFallbackModelTool { [weak self] model, provider in
+                await self?.setFallbackFromChat(model: model, provider: provider) ?? ""
+            },
         ]
         if usesMemory {
             tools += [SaveNoteTool(store: notes), ReadNotesTool(store: notes)] as [any Tool]
@@ -780,6 +867,7 @@ final class ChatViewModel {
             tools.append(UseSkillTool(skills: skills))
         }
         let baseTools = tools
+        let fallbacks = fallbackModels(for: selected, settings: settings, transport: transport)
         let connectorSelection = selectedConnectorIDs
         let connectorSummary = connectorLibrary?.connectors.map { (name: $0.name, active: isConnectorActive($0)) } ?? []
         let userInstructions = settings.userInstructions
@@ -820,6 +908,10 @@ final class ChatViewModel {
                     refreshTools: { [weak self] in
                         let connected = await self?.turnConnectorTools ?? []
                         return baseTools + connected
+                    },
+                    fallbacks: fallbacks,
+                    shouldFallBack: { [weak self] error in
+                        await self?.canFallBack(after: error) ?? false
                     }
                 )
                 for try await event in agent.run(messages) {
@@ -916,6 +1008,21 @@ final class ChatViewModel {
             for source in sources where !items[index].sources.contains(where: { $0.url == source.url }) {
                 items[index].sources.append(source)
             }
+        case let .modelSwitched(id, name):
+            // Yarıda kalan adımın metni atılır; yedek model adımı baştan üretir.
+            if !pendingStepText.isEmpty, items[index].text.hasSuffix(pendingStepText) {
+                items[index].text.removeLast(pendingStepText.count)
+            }
+            pendingStepText = ""
+            items[index].preparing = nil
+            let previous = currentModel?.name ?? ""
+            let note = L("\(previous) couldn't answer, so \(name) continued.",
+                         "\(previous) cevap veremedi; \(name) ile devam edildi.")
+            items[index].notice = [items[index].notice, note].compactMap { $0 }.joined(separator: "\n")
+            if let selected = lastSettings?.selection(for: id) {
+                currentModel = (selected.provider.id, selected.model.name, selected.model.id)
+            }
+            continuedTurn?.advance(note)
         case let .message(message):
             history.append(message)
             if message.role == .assistant {

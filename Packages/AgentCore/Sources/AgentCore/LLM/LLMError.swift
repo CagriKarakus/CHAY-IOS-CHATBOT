@@ -11,6 +11,17 @@ public enum LLMError: Error, Equatable, Sendable {
     case invalidResponse
 }
 
+extension LLMError {
+    /// Yoğunluk veya sunucu sorunu: başka bir modelle çalışabilir. Ayar hataları (key, model adı) buna girmez.
+    public var isTemporary: Bool {
+        switch self {
+        case let .http(status, _): status == 408 || status == 429 || (500..<600).contains(status)
+        case .server: true
+        default: false
+        }
+    }
+}
+
 extension LLMError: LocalizedError {
     public var errorDescription: String? {
         switch self {

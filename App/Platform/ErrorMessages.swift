@@ -3,6 +3,19 @@ import Foundation
 import AgentCore
 
 /// Hataları seçili dilde, kullanıcının anlayacağı mesaja çevirir.
+/// Başka bir modelin çözebileceği hata: yoğunluk, sunucu arızası veya sunucuya ulaşılamaması.
+/// İnternetin kapalı olması ve ayar hataları (key, model adı) buna girmez.
+func isTemporaryFailure(_ error: any Error) -> Bool {
+    if let llmError = error as? LLMError { return llmError.isTemporary }
+    guard let urlError = error as? URLError else { return false }
+    switch urlError.code {
+    case .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost, .badServerResponse:
+        return true
+    default:
+        return false
+    }
+}
+
 func userFacingMessage(for error: any Error) -> String {
     if let repositoryError = error as? SkillRepository.RepositoryError {
         return localizedDescription(of: repositoryError)

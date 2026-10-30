@@ -24,6 +24,7 @@ The latest version is **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Image generation** with models that support `/images/generations`, and **read aloud** with the phone's built-in voices
 - **Edit and regenerate** messages, with the same or another model; earlier versions are kept and you can switch between them with ‹ 1/2 ›
 - **Token limits**: set daily and monthly limits (input + output tokens) per model; when one is reached, requests go to a fallback model you chose until the limit resets, or you are asked to pick one
+- **Fallback models**: give each provider an ordered list of backup models, including models from other providers. If it's overloaded, has a server problem or can't be reached, the reply continues on the next model and returns to the main model on your next message. You can also set a fallback by asking in the chat
 - **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
 
 ### Tools

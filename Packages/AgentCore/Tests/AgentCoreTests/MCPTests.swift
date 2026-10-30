@@ -641,6 +641,108 @@ private final class ToolShelf: @unchecked Sendable {
     #expect(!SystemPrompt.make().contains("Connectors saved in the app"))
 }
 
+// MARK: - Yedek model
+
+private let textReply = [#"data: {"choices":[{"delta":{"content":"yedek cevap"}}]}"#, "data: [DONE]"]
+
+/// `failure` varsa satırlardan sonra onunla biten sahte model.
+private struct FailingTransport: HTTPTransport {
+    var lines: [String] = []
+    var failure: any Error
+
+    func lines(for request: HTTPRequest) -> AsyncThrowingStream<String, any Error> {
+        let lines = self.lines
+        let failure = self.failure
+        return AsyncThrowingStream { continuation in
+            lines.forEach { continuation.yield($0) }
+            continuation.finish(throwing: failure)
+        }
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        HTTPResponse(statusCode: 500, contentType: nil, body: Data())
+    }
+}
+
+private func llmClient(_ transport: any HTTPTransport, model: String = "m") throws -> LLMClient {
+    LLMClient(configuration: try LLMConfiguration(baseURL: "https://llm.example.com/v1", apiKey: "k", model: model), transport: transport)
+}
+
+private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
+    var events: [AgentEvent] = []
+    for try await event in loop.run([ChatMessage(role: .user, content: "x")]) { events.append(event) }
+    return events
+}
+
+@Test func agentLoopSwitchesToFallbackAndDropsPartialText() async throws {
+    let id = UUID()
+    let primary = FailingTransport(
+        lines: [#"data: {"choices":[{"delta":{"content":"yarım"}}]}"#],
+        failure: HTTPStatusError(statusCode: 503, body: "capacity")
+    )
+    let backup = ScriptedTransport([textReply])
+    let loop = AgentLoop(client: try llmClient(primary), tools: [],
+                         fallbacks: [FallbackModel(id: id, name: "yedek", client: try llmClient(backup, model: "b"))])
+    let events = try await collect(loop)
+
+    #expect(events.contains(.modelSwitched(id: id, name: "yedek")))
+    let answer = events.compactMap { event -> String? in
+        if case let .message(message) = event, message.role == .assistant { message.content } else { nil }
+    }
+    #expect(answer == ["yedek cevap"])
+    #expect(backup.requests.count == 1)
+}
+
+@Test func agentLoopTriesFallbacksInOrderThenFails() async throws {
+    let busy = FailingTransport(failure: HTTPStatusError(statusCode: 429, body: ""))
+    let last = ScriptedTransport([textReply])
+    let chain = [
+        FallbackModel(id: UUID(), name: "ikinci", client: try llmClient(busy)),
+        FallbackModel(id: UUID(), name: "üçüncü", client: try llmClient(last)),
+    ]
+    let events = try await collect(AgentLoop(client: try llmClient(busy), tools: [], fallbacks: chain))
+    #expect(events.filter { if case .modelSwitched = $0 { true } else { false } }.count == 2)
+    #expect(last.requests.count == 1)
+
+    let allBusy = AgentLoop(client: try llmClient(busy), tools: [], fallbacks: [chain[0]])
+    await #expect(throws: LLMError.http(status: 429, message: nil)) { try await collect(allBusy) }
+}
+
+@Test func agentLoopKeepsConfigErrorsAndHonoursTheFilter() async throws {
+    let wrongKey = FailingTransport(failure: HTTPStatusError(statusCode: 401, body: ""))
+    let unused = ScriptedTransport([textReply])
+    let fallback = FallbackModel(id: UUID(), name: "yedek", client: try llmClient(unused))
+    await #expect(throws: LLMError.self) {
+        try await collect(AgentLoop(client: try llmClient(wrongKey), tools: [], fallbacks: [fallback]))
+    }
+    #expect(unused.requests.isEmpty)
+
+    // Uygulama arka plandayken kesilen bağlantı gibi durumlarda filtre geçişi engeller.
+    let busy = FailingTransport(failure: HTTPStatusError(statusCode: 503, body: ""))
+    await #expect(throws: LLMError.self) {
+        try await collect(AgentLoop(client: try llmClient(busy), tools: [], fallbacks: [fallback], shouldFallBack: { _ in false }))
+    }
+    #expect(unused.requests.isEmpty)
+}
+
+@Test func temporaryLLMErrorsAreClassified() {
+    for status in [408, 429, 500, 502, 503, 529] {
+        #expect(LLMError.http(status: status, message: nil).isTemporary, "\(status)")
+    }
+    for status in [400, 401, 403, 404] {
+        #expect(!LLMError.http(status: status, message: nil).isTemporary, "\(status)")
+    }
+    #expect(LLMError.server(message: "overloaded").isTemporary)
+    #expect(!LLMError.missingAPIKey.isTemporary)
+}
+
+@Test func setFallbackModelToolPassesNamesAndAsksAfterWebContent() async throws {
+    let tool = SetFallbackModelTool { model, provider in "\(model)|\(provider ?? "current")" }
+    #expect(tool.requiresApprovalAfterUntrustedContent)
+    #expect(try await tool.run(arguments: #"{"model":"gpt-x"}"#).content == "gpt-x|current")
+    #expect(try await tool.run(arguments: #"{"model":"gpt-x","provider":"Evren"}"#).content == "gpt-x|Evren")
+}
+
 @Test func oauthWellKnownCandidates() {
     #expect(MCPOAuth.protectedResourceCandidates(for: URL(string: "https://a.com/v1/mcp/")!).map(\.absoluteString) == [
         "https://a.com/.well-known/oauth-protected-resource/v1/mcp",
