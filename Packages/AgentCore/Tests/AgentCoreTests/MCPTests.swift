@@ -749,6 +749,15 @@ private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
     #expect(models.map(\.supportsTools) == [true, false, nil])
 }
 
+@Test func modelCardReportsToolSupport() throws {
+    func card(_ json: String) throws -> ModelInfo {
+        try JSONDecoder().decode(ModelCard.self, from: Data(json.utf8)).info
+    }
+    #expect(try card(#"{"id":"a","capabilities":{"tools":true}}"#).supportsTools == true)
+    #expect(try card(#"{"id":"b","capabilities":{"tools":false}}"#).supportsTools == false)
+    #expect(try card(#"{"id":"c","capabilities":{}}"#).supportsTools == nil)
+}
+
 @Test func systemPromptTellsToolLessModelsWhatTheyCantDo() {
     #expect(SystemPrompt.make(toolsAvailable: false).contains("This model has no tools"))
     #expect(!SystemPrompt.make().contains("This model has no tools"))

@@ -77,6 +77,7 @@ struct ModelCard: Decodable {
     struct Capabilities: Decodable {
         let reasoning_effort: Bool?
         let vision: Bool?
+        let tools: Bool?
     }
     let id: String
     let task: String?
@@ -94,7 +95,8 @@ struct ModelCard: Decodable {
             inputModalities: inputs,
             task: task,
             supportsReasoningEffort: capabilities?.reasoning_effort,
-            contextLength: context_length
+            contextLength: context_length,
+            supportedParameters: capabilities?.tools.map { $0 ? ["tools"] : [] }
         )
     }
 }
