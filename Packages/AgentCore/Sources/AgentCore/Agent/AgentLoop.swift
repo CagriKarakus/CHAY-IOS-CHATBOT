@@ -65,8 +65,8 @@ public struct AgentLoop: Sendable {
     /// `refreshTools`: her adımdan önce güncel araç listesini verir (ör. turda yeni bağlanan bağlayıcılar için).
     /// `fallbacks`: model hata verince sırayla denenir; turun kalanı çalışan modelle sürer.
     /// `shouldFallBack`: hatanın yedeğe geçirip geçirmeyeceği.
-    /// `assumeUntrusted`: sohbette önceden sağlayıcı araması kullanıldı; o içerik işaretsiz geldiği için
-    /// kalıcı işlemler yine onay ister.
+    /// `assumeUntrusted`: sohbette önceden sağlayıcı araması kullanıldı veya eski mesajlar özetlendi; bu içerik
+    /// işaretsiz olduğu için kalıcı işlemler yine onay ister.
     /// `retryDelays`: yedek model kalmadığında geçici hatalarda aynı modelin yeniden denenmesinden önceki beklemeler.
     public init(
         client: LLMClient,
@@ -259,11 +259,13 @@ public struct AgentLoop: Sendable {
 
         // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler ve veri değiştiren bağlayıcı araçları
         // kullanıcı onayı olmadan yapılmaz.
-        if tool.requiresApproval || (tool.requiresApprovalAfterUntrustedContent && (untrusted || containsUntrustedContent(conversation))) {
+        let afterUntrusted = untrusted || containsUntrustedContent(conversation)
+        if tool.requiresApproval
+            || (afterUntrusted && tool.needsApprovalAfterUntrustedContent(arguments: call.function.arguments, conversation: conversation)) {
             let approved = await approve(ApprovalRequest(
                 toolName: tool.name,
                 detail: detail,
-                arguments: tool.requiresApproval ? call.function.arguments : nil
+                arguments: call.function.arguments
             ))
             try Task.checkCancellation()
             guard approved else {

@@ -13,12 +13,13 @@ enum Palette {
 
     static let text = Color(light: 0x383A42, dark: 0xABB2BF)
     static let textBright = Color(light: 0x1F2024, dark: 0xD7DAE0)
-    static let textMuted = Color(light: 0x696C77, dark: 0x7F848E)
+    static let textMuted = Color(light: 0x696C77, dark: 0x9AA0AB)
 
-    static let blue = Color(light: 0x4078F2, dark: 0x61AFEF)
-    static let green = Color(light: 0x50A14F, dark: 0x98C379)
-    static let red = Color(light: 0xE45649, dark: 0xE06C75)
-    static let yellow = Color(light: 0xC18401, dark: 0xE5C07B)
+    // Açık modda küçük durum metinleri okunabilsin diye temadan biraz koyu (4.5:1 kontrast).
+    static let blue = Color(light: 0x2F5FD0, dark: 0x61AFEF)
+    static let green = Color(light: 0x2E7D32, dark: 0x98C379)
+    static let red = Color(light: 0xC62828, dark: 0xE06C75)
+    static let yellow = Color(light: 0x8A6100, dark: 0xE5C07B)
     static let purple = Color(light: 0xA626A4, dark: 0xC678DD)
     static let cyan = Color(light: 0x0184BC, dark: 0x56B6C2)
 }
@@ -54,14 +55,6 @@ enum Appearance: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let storageKey = "app.appearance"
-
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
 
     var title: String {
         switch self {

@@ -58,6 +58,9 @@ public struct CalculatorTool: Tool {
 
         let symbols = Set("0123456789.,+-*/%^() \t")
         var output = ""
+        /// Açık parantezler; `true` ise fonksiyon çağrısı.
+        var parentheses: [Bool] = []
+        var afterName = false
         var index = trimmed.startIndex
         while index < trimmed.endIndex {
             let character = trimmed[index]
@@ -70,12 +73,34 @@ public struct CalculatorTool: Tool {
                 guard allowedNames.contains(word) else { throw CalculatorError.notAllowed(word) }
                 output += "Math." + word
                 index = end
-            } else if symbols.contains(character) {
-                output += character == "^" ? "**" : String(character)
-                index = trimmed.index(after: index)
-            } else {
-                throw CalculatorError.notAllowed(String(character))
+                afterName = true
+                continue
             }
+            guard symbols.contains(character) else { throw CalculatorError.notAllowed(String(character)) }
+            let next = trimmed.index(after: index)
+            let previous = output.last { !$0.isWhitespace }
+            switch character {
+            case ",":
+                // Virgül sadece fonksiyon argümanlarını ayırır: JavaScript `1,000+2` ifadesini sessizce 2 hesaplar.
+                guard parentheses.last == true else { throw CalculatorError.notAllowed(",") }
+            case "(":
+                parentheses.append(afterName)
+            case ")":
+                _ = parentheses.popLast()
+            case "0" where next < trimmed.endIndex && trimmed[next].isNumber && output.last?.isNumber != true && output.last != ".":
+                // JavaScript `010` ifadesini 8 sayar.
+                throw CalculatorError.notAllowed(String(trimmed[index...].prefix(2)))
+            default:
+                break
+            }
+            if character == "-", previous == nil || previous == "(" || previous == "," {
+                // JavaScript `-2**2` yazımını reddeder; matematikte sonuç -(2^2)'dir.
+                output += "(-1)*"
+            } else {
+                output += character == "^" ? "**" : String(character)
+            }
+            if !character.isWhitespace { afterName = false }
+            index = next
         }
         return output
     }

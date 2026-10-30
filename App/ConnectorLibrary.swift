@@ -256,6 +256,7 @@ final class ConnectorLibrary {
     }
 
     /// Sohbette kullanılacak araçlar. Araç listesi hiç alınmamış bağlayıcılara önce bağlanılır; bağlanamayanlar atlanır.
+    /// Sağlayıcıların sınırını aşmamak için en fazla `MCPTool.maxPerRequest` araç verilir.
     func tools(in selection: Set<UUID>?) async -> [any Tool] {
         var tools: [any Tool] = []
         var taken = Set<String>()
@@ -264,7 +265,7 @@ final class ConnectorLibrary {
                 await refreshBriefly(connector.id)
             }
             guard let current = self.connector(connector.id), let client = try? client(for: current.id) else { continue }
-            for info in current.enabledTools {
+            for info in current.enabledTools.prefix(MCPTool.maxPerRequest - tools.count) {
                 let name = MCPTool.exposedName(server: current.name, tool: info.name, taken: taken)
                 taken.insert(name)
                 tools.append(MCPTool(info: info, exposedName: name, serverName: current.name, client: client,

@@ -38,7 +38,7 @@ struct URLSessionTransport: HTTPTransport {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        let (data, response) = try await session.data(for: urlRequest(from: request))
+        let (data, response) = try await load(request)
         guard let http = response as? HTTPURLResponse else { throw LLMError.invalidResponse }
         return HTTPResponse(
             statusCode: http.statusCode,
@@ -51,6 +51,20 @@ struct URLSessionTransport: HTTPTransport {
         )
     }
 
+    /// Modelin istediği adreslerde yönlendirmeler denetlenir ve indirme sınırı uygulanır.
+    private func load(_ request: HTTPRequest) async throws -> (Data, URLResponse) {
+        guard let limit = request.webFetchLimit else {
+            return try await session.data(for: urlRequest(from: request))
+        }
+        let (bytes, response) = try await session.bytes(for: urlRequest(from: request), delegate: PublicRedirectsOnly())
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count >= limit { break }
+        }
+        return (data, response)
+    }
+
     private func urlRequest(from request: HTTPRequest) -> URLRequest {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: 60)
         urlRequest.httpMethod = request.method
@@ -59,5 +73,17 @@ struct URLSessionTransport: HTTPTransport {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
         return urlRequest
+    }
+}
+
+/// Yönlendirme yerel ağa gidiyorsa izlenmez; istek 3xx yanıtıyla biter.
+private final class PublicRedirectsOnly: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        request.url.flatMap { ConnectorAddress.validated($0.absoluteString) } == nil ? nil : request
     }
 }

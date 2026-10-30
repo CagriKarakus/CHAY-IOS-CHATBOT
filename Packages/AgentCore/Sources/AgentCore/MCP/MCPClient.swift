@@ -108,8 +108,11 @@ public actor MCPClient {
     /// Aracı çalıştırır ve sonucunu metin olarak döndürür. `arguments` modelin ürettiği JSON'dur.
     public func callTool(_ name: String, arguments: String) async throws -> String {
         try await ensureInitialized()
-        let decoded = (try? JSONDecoder().decode(JSONValue.self, from: Data(arguments.utf8))) ?? [:]
-        let parsed: JSONValue = if case .object = decoded { decoded } else { [:] }
+        // Bozuk argümanlar boş sayılıp araç yanlış çalıştırılmasın.
+        let json = arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{}" : arguments
+        guard let parsed = try? JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)), case .object = parsed else {
+            throw ToolError.invalidArguments
+        }
         let result = try Self.decode(CallResult.self, from: try await request("tools/call", params: ["name": .string(name), "arguments": parsed]))
         if result.isError == true { throw MCPError.toolFailed(result.text) }
         return result.text
@@ -159,9 +162,14 @@ public actor MCPClient {
         let response = try await transport.send(httpRequest(body, token: try await tokens.token(forceRefresh: false)))
         guard response.statusCode == 401 else { return response }
         let metadata = Self.resourceMetadataURL(fromChallenge: response.header("www-authenticate"))
-        guard let fresh = try? await tokens.token(forceRefresh: true) else {
-            throw MCPError.unauthorized(resourceMetadata: metadata)
+        // Sadece gerçekten giriş gerekiyorsa "yeniden giriş yap" denir; bağlantı sorunları olduğu gibi iletilir.
+        let fresh: String?
+        do {
+            fresh = try await tokens.token(forceRefresh: true)
+        } catch MCPOAuthError.loginRequired {
+            fresh = nil
         }
+        guard let fresh else { throw MCPError.unauthorized(resourceMetadata: metadata) }
         let retried = try await transport.send(httpRequest(body, token: fresh))
         if retried.statusCode == 401 { throw MCPError.unauthorized(resourceMetadata: metadata) }
         return retried

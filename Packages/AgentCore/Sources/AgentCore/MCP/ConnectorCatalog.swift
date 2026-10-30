@@ -18,6 +18,7 @@ public enum ConnectorSource: String, Codable, Equatable, Sendable {
 /// Sohbetten eklenecek bağlayıcı adreslerinin güvenlik kontrolü.
 public enum ConnectorAddress {
     /// Sadece internetteki HTTPS adresleri: yerel ağ, kullanıcı adı içeren veya IPv6 adresler reddedilir.
+    /// `fetch_page` de bunu kullanır.
     public static func validated(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
@@ -36,13 +37,17 @@ public enum ConnectorAddress {
         return MCPOAuth.canonicalResource(url).lowercased()
     }
 
-    private static func isPrivate(_ host: String) -> Bool {
+    private static func isPrivate(_ rawHost: String) -> Bool {
+        let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
         if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || host.hasSuffix(".internal") {
             return true
         }
+        // Tek sayı veya onaltılık yazılmış IP adresi (2130706433 = 127.0.0.1).
+        if Int(host) != nil || host.hasPrefix("0x") { return true }
         let parts = host.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 4, host.split(separator: ".").count == 4 else { return false }
         return parts[0] == 0 || parts[0] == 10 || parts[0] == 127
+            || (parts[0] == 100 && (64...127).contains(parts[1]))
             || (parts[0] == 169 && parts[1] == 254)
             || (parts[0] == 172 && (16...31).contains(parts[1]))
             || (parts[0] == 192 && parts[1] == 168)

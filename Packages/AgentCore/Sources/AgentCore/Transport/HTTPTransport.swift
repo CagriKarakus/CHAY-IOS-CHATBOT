@@ -5,6 +5,8 @@ public struct HTTPRequest: Equatable, Sendable {
     public var method: String
     public var headers: [String: String]
     public var body: Data?
+    /// Modelin istediği bir adres okunuyor: en fazla bu kadar bayt alınır, yönlendirmeler özel ağa gidemez.
+    public var webFetchLimit: Int? = nil
 
     public init(url: URL, method: String, headers: [String: String], body: Data?) {
         self.url = url

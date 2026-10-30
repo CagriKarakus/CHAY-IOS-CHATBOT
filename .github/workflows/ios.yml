@@ -6,12 +6,30 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Aynı daldaki eski build, yenisi gelince iptal edilir.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-latest
+    # `macos-latest` değişince Xcode ve SDK habersiz değişmesin.
+    runs-on: macos-26
     timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
     steps:
       - uses: actions/checkout@v5
+
+      - name: Paket önbelleği
+        uses: actions/cache@v6
+        with:
+          # Sadece indirilen kaynaklar: derlenmiş dosyalar Xcode sürümü değişince sorun çıkarabilir.
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/AgentCore/Package.swift', 'Packages/AgentCore/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
 
       - name: Xcode sürümü
         run: xcodebuild -version
@@ -32,6 +50,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""

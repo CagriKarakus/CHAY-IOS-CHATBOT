@@ -4,6 +4,8 @@ import Foundation
 public struct MCPTool: Tool {
     /// Tek araç sonucunun modele giden en fazla uzunluğu.
     static let outputLimit = 20_000
+    /// Bir istekte modele sunulan en fazla bağlayıcı aracı; sağlayıcılar araç sayısını sınırlar.
+    public static let maxPerRequest = 100
 
     public let name: String
     public let description: String
@@ -22,8 +24,10 @@ public struct MCPTool: Tool {
         self.client = client
         name = exposedName
         description = "[\(serverName) connector] " + (info.description ?? info.title ?? info.name)
-        if case let .object(schema)? = info.inputSchema, schema["type"] == "object" {
-            parameters = info.inputSchema!
+        if case var .object(schema)? = info.inputSchema, schema["type"] == "object" {
+            // Bazı sağlayıcılar `$schema` anahtarını reddeder.
+            schema["$schema"] = nil
+            parameters = .object(schema)
         } else {
             parameters = ["type": "object", "properties": [:]]
         }

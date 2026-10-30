@@ -15,6 +15,11 @@ enum TurnNotifications {
         }
     }
 
+    /// Kullanıcı bildirimleri kapatmış mı.
+    static func areDenied() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+    }
+
     /// iOS arka plan süresi (~30 sn) dolmadan önce kullanıcıyı uygulamaya geri çağırır.
     static func scheduleStillRunning(after seconds: TimeInterval = 20) {
         let content = UNMutableNotificationContent()
@@ -32,7 +37,8 @@ enum TurnNotifications {
         content.title = L("Answer ready", "Cevap hazır")
         content.body = title
         content.sound = .default
-        add(finishedID, content, trigger: nil)
+        // Aynı anda birden çok cevap bitebilir; biri diğerinin bildirimini silmesin.
+        add("\(finishedID).\(UUID().uuidString)", content, trigger: nil)
     }
 
     static func cancelStillRunning() {

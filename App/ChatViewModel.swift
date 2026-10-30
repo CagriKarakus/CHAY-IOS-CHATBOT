@@ -188,6 +188,11 @@ final class ChatViewModel {
     var input = ""
     var errorMessage: String?
 
+    /// Cevap kullanıcının onayını veya bağlayıcı kurulumunu bekliyor.
+    var isWaitingForUser: Bool {
+        pendingApproval != nil || pendingConnectorSetup != nil
+    }
+
     /// Hafıza bu sohbette gerçekten kullanılıyor mu.
     var usesMemory: Bool {
         memoryEnabled && !isIncognito
@@ -1009,7 +1014,8 @@ final class ChatViewModel {
                     shouldFallBack: { [weak self] error in
                         await self?.canFallBack(after: error) ?? false
                     },
-                    assumeUntrusted: chatHasWebSources
+                    // Özet, okunan web içeriğini işaretsiz taşıyabilir.
+                    assumeUntrusted: chatHasWebSources || summary != nil
                 )
                 for try await event in agent.run(messages) {
                     apply(event, to: reply.id)

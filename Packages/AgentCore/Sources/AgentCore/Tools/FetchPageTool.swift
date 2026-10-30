@@ -17,6 +17,9 @@ public struct FetchPageTool: Tool {
         "required": ["url"],
     ]
 
+    /// İndirilecek en fazla bayt; sonsuz akan veya dev dosyalar belleği doldurmasın.
+    static let maxBytes = 2_000_000
+
     private let transport: any HTTPTransport
     private let maxCharacters: Int
 
@@ -31,23 +34,34 @@ public struct FetchPageTool: Tool {
         return URL(string: raw)?.host ?? raw
     }
 
+    /// Sohbette kullanıcının veya bir aracın vermediği adres, okunan içeriğin yönlendirmesiyle sohbetteki
+    /// bilgileri dışarı taşıyor olabilir; bu yüzden önce sorulur. Arama sonuçlarından gelen adresler sorulmaz.
+    public func needsApprovalAfterUntrustedContent(arguments: String, conversation: [ChatMessage]) -> Bool {
+        guard let url = try? decodeArguments(Arguments.self, from: arguments).url else { return false }
+        var target = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fragment = target.firstIndex(of: "#") { target = String(target[..<fragment]) }
+        while target.hasSuffix("/") { target.removeLast() }
+        return !conversation.contains { message in
+            (message.role == .user || message.role == .tool) && (message.content?.contains(target) ?? false)
+        }
+    }
+
     public func run(arguments: String) async throws -> ToolOutput {
         let raw = try decodeArguments(Arguments.self, from: arguments).url
-        guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
-              url.scheme?.lowercased() == "https", url.host != nil
-        else { throw ToolError.invalidURL }
+        guard let url = ConnectorAddress.validated(raw) else { throw ToolError.invalidURL }
 
-        let request = HTTPRequest(
+        var request = HTTPRequest(
             url: url,
             method: "GET",
             headers: ["Accept": "text/html,text/plain;q=0.9,*/*;q=0.5"],
             body: nil
         )
+        request.webFetchLimit = Self.maxBytes
         let response = try await transport.send(request)
         guard (200..<300).contains(response.statusCode) else { throw ToolError.httpFailure(response) }
 
         let contentType = response.contentType?.lowercased() ?? "text/html"
-        let body = String(data: response.body, encoding: .utf8) ?? String(decoding: response.body, as: UTF8.self)
+        let body = WebText.decode(response.body, contentType: response.contentType)
 
         let title: String
         let text: String

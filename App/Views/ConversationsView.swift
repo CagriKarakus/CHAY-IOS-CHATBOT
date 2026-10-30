@@ -5,10 +5,12 @@ import SwiftUI
 struct ConversationsView: View {
     /// Şu an açık olan sohbet (işaretlemek ve silinirse kapatmak için).
     let currentID: UUID?
-    /// Cevap yazılırken açık sohbet silinemez, başka sohbet açılamaz.
-    let isBusy: Bool
+    /// Gizli sohbet cevabı sürerken başka sohbet açılamaz.
+    let isLocked: Bool
+    /// Cevabı süren sohbetler silinemez.
+    let streamingIDs: Set<UUID>
     let open: (ConversationRecord) -> Void
-    let deletedCurrent: () -> Void
+    let deleted: (UUID) -> Void
 
     @Environment(\.modelContext) private var context
     @Query(sort: \ConversationRecord.updatedAt, order: .reverse) private var conversations: [ConversationRecord]
@@ -37,15 +39,20 @@ struct ConversationsView: View {
                                 .foregroundStyle(Palette.textMuted)
                         }
                         Spacer()
-                        if conversation.id == currentID {
+                        if streamingIDs.contains(conversation.id) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(Palette.textMuted)
+                                .accessibilityLabel(L("Answering", "Cevap yazılıyor"))
+                        } else if conversation.id == currentID {
                             Image(systemName: "circle.fill")
                                 .font(.caption2)
                                 .foregroundStyle(Palette.blue)
                         }
                     }
                 }
-                .disabled(isBusy)
-                .deleteDisabled(isBusy && conversation.id == currentID)
+                .disabled(isLocked)
+                .deleteDisabled(streamingIDs.contains(conversation.id))
                 .listRowBackground(Palette.surface)
             }
             .onDelete(perform: delete)
@@ -77,9 +84,7 @@ struct ConversationsView: View {
     private func delete(at offsets: IndexSet) {
         for index in offsets {
             let conversation = filtered[index]
-            if conversation.id == currentID {
-                deletedCurrent()
-            }
+            deleted(conversation.id)
             // Sohbetteki görsellerin tam boyutlu kopyalarını da sil.
             AttachmentFiles.delete(conversation.content.allItems.flatMap { $0.attachments ?? [] }.compactMap(\.file))
             context.delete(conversation)

@@ -111,7 +111,7 @@ private func saveNoteRun(history: [ChatMessage], approver: ApprovalRecorder, sto
 
     _ = try await saveNoteRun(history: [ChatMessage(role: .user, content: "Ara"), webResult], approver: approver, store: store)
 
-    #expect(approver.requests == [ApprovalRequest(toolName: "save_note", detail: "Kullanıcı kedi seviyor.")])
+    #expect(approver.requests == [ApprovalRequest(toolName: "save_note", detail: "Kullanıcı kedi seviyor.", arguments: #"{"content":"Kullanıcı kedi seviyor."}"#)])
     #expect(await store.notes.count == 1)
 }
 

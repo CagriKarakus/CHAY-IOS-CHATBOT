@@ -27,6 +27,7 @@ struct ArtifactView: View {
 
 /// Artifact'ı (HTML/JS) izole bir web görünümünde gösterir.
 /// Sayfa sadece kendi dosyasını okuyabilir; dış linkler Safari'de açılır, uygulamanın verilerine erişemez.
+/// Dosyadaki güvenlik politikası (`CreateArtifactTool`) ağ isteklerini kapatır.
 struct ArtifactPage: View {
     let document: DocumentFile
     @State private var reloadToken = UUID()

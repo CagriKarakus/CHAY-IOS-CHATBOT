@@ -9,9 +9,22 @@ public struct CreateArtifactTool: Tool {
     }
 
     static let maxLength = 500_000
+    /// Sayfa dışarıya veri gönderemesin: ağ isteği, form ve dış görsel kapalı; sadece bilinen CDN'lerden kütüphane yüklenir.
+    static let contentSecurityPolicy = [
+        "default-src 'none'",
+        "script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com",
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://fonts.googleapis.com",
+        "font-src data: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://fonts.gstatic.com",
+        "img-src data: blob:",
+        "media-src data: blob:",
+        "worker-src blob:",
+        "connect-src 'none'",
+        "form-action 'none'",
+        "base-uri 'none'",
+    ].joined(separator: "; ")
 
     public let name = "create_artifact"
-    public let description = "Creates an interactive web page (artifact) the user can open in the app: charts, visualizations, calculators, small apps or games. Write one self-contained HTML document with inline CSS and JavaScript; external libraries only from cdnjs.cloudflare.com or cdn.jsdelivr.net. Use the same title to update an existing artifact."
+    public let description = "Creates an interactive web page (artifact) the user can open in the app: charts, visualizations, calculators, small apps or games. Write one self-contained HTML document with inline CSS and JavaScript; external libraries only from cdnjs.cloudflare.com, cdn.jsdelivr.net or unpkg.com. The page can't make network requests or load remote images, so put all data inline. Use the same title to update an existing artifact."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
@@ -49,9 +62,12 @@ public struct CreateArtifactTool: Tool {
     }
 
     /// Tam bir HTML belgesi değilse mobil uyumlu bir iskelete yerleştirir.
+    /// Güvenlik politikası en başa yazılır: sayfadaki hiçbir betik ondan önce çalışamaz.
     static func document(title: String, html: String) -> String {
+        let policy = "<meta charset=\"utf-8\">\n<meta http-equiv=\"Content-Security-Policy\" content=\"\(contentSecurityPolicy)\">"
         if html.range(of: "<html", options: .caseInsensitive) != nil {
-            return html
+            let body = html.replacingOccurrences(of: #"^\s*<!doctype[^>]*>"#, with: "", options: [.regularExpression, .caseInsensitive])
+            return "<!doctype html>\n\(policy)\n\(body)"
         }
         let escapedTitle = title
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -60,7 +76,7 @@ public struct CreateArtifactTool: Tool {
         <!doctype html>
         <html>
         <head>
-        <meta charset="utf-8">
+        \(policy)
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>\(escapedTitle)</title>
         </head>

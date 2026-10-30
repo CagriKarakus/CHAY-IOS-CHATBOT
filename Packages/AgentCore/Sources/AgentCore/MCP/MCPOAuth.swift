@@ -50,7 +50,7 @@ public enum MCPOAuthError: Error, Equatable, Sendable {
     case stateMismatch
     /// Kullanıcı reddetti veya sunucu hata döndü.
     case denied(String)
-    case tokenFailed(status: Int, message: String?)
+    case tokenFailed(status: Int, message: String?, code: String? = nil)
     /// Token yenilenemiyor; yeniden giriş gerekiyor.
     case loginRequired
 }
@@ -63,7 +63,7 @@ extension MCPOAuthError: LocalizedError {
         case let .registrationFailed(status, _): "Client registration failed (HTTP \(status))."
         case .stateMismatch: "The sign-in response doesn't match this request."
         case .denied: "The service didn't complete the sign-in."
-        case let .tokenFailed(status, _): "Getting the token failed (HTTP \(status))."
+        case let .tokenFailed(status, _, _): "Getting the token failed (HTTP \(status))."
         case .loginRequired: "Signing in again is required."
         }
     }
@@ -73,7 +73,7 @@ extension MCPOAuthError: ServerDetailError {
     public var serverDetail: String? {
         switch self {
         case let .denied(reason): HTTPResponse.redacted(reason)
-        case let .tokenFailed(_, message): message.map(HTTPResponse.redacted)
+        case let .tokenFailed(_, message, _): message.map(HTTPResponse.redacted)
         case let .registrationFailed(_, detail): detail
         default: nil
         }
@@ -178,7 +178,7 @@ public enum MCPOAuth {
             clientSecret: login.clientSecret,
             accessToken: token.access_token,
             refreshToken: token.refresh_token,
-            expiresAt: token.expires_in.map { Date.now.addingTimeInterval(TimeInterval($0)) },
+            expiresAt: token.expiresAt,
             tokenEndpoint: login.tokenEndpoint,
             resource: login.resource
         )
@@ -197,14 +197,19 @@ public enum MCPOAuth {
         let token: TokenResponse
         do {
             token = try await requestToken(credentials.tokenEndpoint, form: form, transport: transport)
-        } catch MCPOAuthError.tokenFailed(400..<500, _) {
+        } catch let MCPOAuthError.tokenFailed(status, _, code) where requiresLogin(status: status, code: code) {
             throw MCPOAuthError.loginRequired
         }
         var updated = credentials
         updated.accessToken = token.access_token
         updated.refreshToken = token.refresh_token ?? refreshToken
-        updated.expiresAt = token.expires_in.map { Date.now.addingTimeInterval(TimeInterval($0)) }
+        updated.expiresAt = token.expiresAt
         return updated
+    }
+
+    /// Yenileme gerçekten reddedildi mi: geçici hatalarda (429, sunucu sorunu) kullanıcıdan giriş istenmez.
+    private static func requiresLogin(status: Int, code: String?) -> Bool {
+        code.map { ["invalid_grant", "invalid_client", "unauthorized_client"].contains($0) } ?? (status == 400 || status == 401)
     }
 
     // MARK: - Keşif
@@ -227,15 +232,16 @@ public enum MCPOAuth {
         transport: any HTTPTransport
     ) async -> (resource: ProtectedResource?, metadata: AuthorizationServer?) {
         var resource: ProtectedResource?
-        for candidate in [challenged].compactMap({ $0 }) + protectedResourceCandidates(for: serverURL) {
-            if let found: ProtectedResource = try? await getJSON(candidate, transport: transport), !found.authorization_servers.isEmpty {
+        for candidate in [challenged].compactMap({ $0 }).filter(isSecure) + protectedResourceCandidates(for: serverURL) {
+            if let found: ProtectedResource = try? await getJSON(candidate, transport: transport),
+               !found.authorization_servers.isEmpty, found.describes(serverURL) {
                 resource = found
                 break
             }
         }
-        let issuer = resource?.authorization_servers.first.flatMap(URL.init(string:)) ?? origin(of: serverURL)
+        let issuer = resource?.authorization_servers.compactMap(URL.init(string:)).first(where: isSecure) ?? origin(of: serverURL)
         for candidate in authorizationServerCandidates(for: issuer) {
-            if let found: AuthorizationServer = try? await getJSON(candidate, transport: transport) {
+            if let found: AuthorizationServer = try? await getJSON(candidate, transport: transport), found.isSecure {
                 return (resource, found)
             }
         }
@@ -257,6 +263,10 @@ public enum MCPOAuth {
         )
         guard let response = try? await transport.send(request) else { return nil }
         return (response.statusCode, MCPClient.resourceMetadataURL(fromChallenge: response.header("www-authenticate")))
+    }
+
+    fileprivate static func isSecure(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.isEmpty == false
     }
 
     static func origin(of url: URL) -> URL {
@@ -334,9 +344,25 @@ public enum MCPOAuth {
     }
 
     private struct TokenResponse: Decodable {
+        enum CodingKeys: String, CodingKey {
+            case access_token, refresh_token, expires_in
+        }
+
         let access_token: String
         let refresh_token: String?
-        let expires_in: Int?
+        /// Bazı sunucular sayıyı metin olarak yazar; okunamazsa süresiz sayılır.
+        let expires_in: LenientInt?
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            access_token = try container.decode(String.self, forKey: .access_token)
+            refresh_token = try container.decodeIfPresent(String.self, forKey: .refresh_token)
+            expires_in = try? container.decodeIfPresent(LenientInt.self, forKey: .expires_in)
+        }
+
+        var expiresAt: Date? {
+            expires_in.map { Date.now.addingTimeInterval(TimeInterval($0.value)) }
+        }
     }
 
     private static func requestToken(_ endpoint: URL, form: [(String, String)], transport: any HTTPTransport) async throws -> TokenResponse {
@@ -355,7 +381,7 @@ public enum MCPOAuth {
                 let error_description: String?
             }
             let error = try? JSONDecoder().decode(ErrorBody.self, from: response.body)
-            throw MCPOAuthError.tokenFailed(status: response.statusCode, message: error?.error_description ?? error?.error)
+            throw MCPOAuthError.tokenFailed(status: response.statusCode, message: error?.error_description ?? error?.error, code: error?.error)
         }
         return token
     }
@@ -370,6 +396,11 @@ public enum MCPOAuth {
         let resource: String?
         let authorization_servers: [String]
         let scopes_supported: [String]?
+
+        /// Bilgi bu sunucuya mı ait; başka bir sitenin yetki sunucusuna yönlendirilmeyelim.
+        func describes(_ serverURL: URL) -> Bool {
+            resource.map { URL(string: $0)?.host?.lowercased() == serverURL.host?.lowercased() } ?? true
+        }
     }
 
     private struct AuthorizationServer: Decodable {
@@ -377,6 +408,12 @@ public enum MCPOAuth {
         let token_endpoint: URL
         let registration_endpoint: URL?
         let scopes_supported: [String]?
+
+        /// Token ve kodlar sadece HTTPS üzerinden gider.
+        var isSecure: Bool {
+            MCPOAuth.isSecure(authorization_endpoint) && MCPOAuth.isSecure(token_endpoint)
+                && (registration_endpoint.map(MCPOAuth.isSecure) ?? true)
+        }
     }
 }
 
@@ -385,6 +422,8 @@ public actor OAuthTokenProvider: MCPTokenProvider {
     private var credentials: OAuthCredentials
     private let transport: any HTTPTransport
     private let onUpdate: @Sendable (OAuthCredentials) -> Void
+    /// Süren yenileme. Refresh token çoğu sunucuda tek kullanımlıktır; aynı anda iki istek giriş düşürür.
+    private var refreshing: Task<OAuthCredentials, any Error>?
 
     public init(credentials: OAuthCredentials, transport: any HTTPTransport, onUpdate: @escaping @Sendable (OAuthCredentials) -> Void) {
         self.credentials = credentials
@@ -398,8 +437,15 @@ public actor OAuthTokenProvider: MCPTokenProvider {
                 if forceRefresh { throw MCPOAuthError.loginRequired }
                 return credentials.accessToken
             }
-            credentials = try await MCPOAuth.refresh(credentials, transport: transport)
-            onUpdate(credentials)
+            if let refreshing {
+                credentials = try await refreshing.value
+            } else {
+                let task = Task { [credentials, transport] in try await MCPOAuth.refresh(credentials, transport: transport) }
+                refreshing = task
+                defer { refreshing = nil }
+                credentials = try await task.value
+                onUpdate(credentials)
+            }
         }
         return credentials.accessToken
     }

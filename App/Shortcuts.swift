@@ -121,7 +121,7 @@ struct CHAYShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: AskCHAYIntent(),
-            phrases: ["Ask \(.applicationName)", "\(.applicationName)'a sor"],
+            phrases: ["Ask \(.applicationName)"],
             shortTitle: "Ask CHAY",
             systemImageName: "sparkle"
         )

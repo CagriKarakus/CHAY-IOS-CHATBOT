@@ -17,7 +17,7 @@ struct ChatView: View {
     @Environment(PromptLibrary.self) private var prompts
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var viewModel = ChatViewModel()
+    @State private var sessions = ChatSessions()
     @State private var path: [Route] = []
     @State private var showingSettings = false
     @State private var openedDocument: DocumentFile?
@@ -31,14 +31,21 @@ struct ChatView: View {
     @State private var sharedFile: SharedFile?
     @State private var newPrompt: SavedPrompt?
     @State private var sidebarOpen = false
-    /// Kenar menüsü sürüklenirken parmağın yatay yer değiştirmesi.
-    @State private var dragTranslation: CGFloat = 0
+    /// Kenar menüsü sürüklenirken parmağın yatay yer değiştirmesi. Hareket yarıda kesilse de kendiliğinden sıfırlanır.
+    @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var dragTranslation: CGFloat = 0
     @State private var renaming: ConversationRecord?
     @State private var renameText = ""
     @State private var deleting: ConversationRecord?
+    /// Son kestirme isteği; art arda gelenler sırayla başlasın.
+    @State private var shortcutRun: Task<Void, Never>?
     @Query(sort: \ProjectRecord.createdAt, order: .reverse) private var projects: [ProjectRecord]
     @Query private var conversations: [ConversationRecord]
     @FocusState private var inputFocused: Bool
+
+    /// Ekrandaki sohbet. `await` sonrasında başka sohbete geçilmiş olabilir; uzun işler bunu baştan bir kez alır.
+    private var viewModel: ChatViewModel {
+        sessions.active
+    }
 
     /// Açık sohbetin kaydı; henüz kaydedilmemişse veya gizliyse `nil`.
     private var currentRecord: ConversationRecord? {
@@ -53,8 +60,11 @@ struct ChatView: View {
                 sidebar
                     .frame(width: width)
                     .offset(x: offset - width)
+                    .accessibilityHidden(!sidebarOpen)
+                    .accessibilityAction(.escape) { setSidebar(open: false) }
                 chatStack
                     .offset(x: offset)
+                    .accessibilityHidden(sidebarOpen)
                     .overlay {
                         if offset > 0 {
                             Color.black
@@ -73,9 +83,11 @@ struct ChatView: View {
     private var sidebar: some View {
         SidebarView(
             currentID: viewModel.conversationID,
-            isBusy: viewModel.isStreaming,
+            isLocked: sessions.isLocked,
+            streamingIDs: sessions.streamingIDs,
+            waitingIDs: sessions.waitingIDs,
             openChat: { record in
-                viewModel.open(record)
+                sessions.open(record)
                 path = []
                 setSidebar(open: false)
             },
@@ -89,7 +101,7 @@ struct ChatView: View {
                 setSidebar(open: false)
             },
             newChat: {
-                viewModel.startNewChat()
+                sessions.startNewChat()
                 path = []
                 setSidebar(open: false)
             },
@@ -106,20 +118,21 @@ struct ChatView: View {
         inputFocused = false
         withAnimation(.snappy(duration: 0.25)) {
             sidebarOpen = open
-            dragTranslation = 0
         }
     }
 
     private func sidebarDrag(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 20)
-            .onChanged { value in
+            .updating($dragTranslation) { value, translation, _ in
                 // Dikey kaydırmayı (mesaj listesi) bölmesin: yatay hareket baskınsa başla.
-                guard dragTranslation != 0 || abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
-                if dragTranslation == 0 { inputFocused = false }
-                dragTranslation = value.translation.width
+                guard translation != 0 || abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                translation = value.translation.width
+            }
+            .onChanged { _ in
+                if dragTranslation != 0, inputFocused { inputFocused = false }
             }
             .onEnded { value in
-                guard dragTranslation != 0 else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
                 let end = (sidebarOpen ? width : 0) + value.predictedEndTranslation.width
                 setSidebar(open: end > width / 2)
             }
@@ -147,6 +160,19 @@ struct ChatView: View {
                         fallbackPrompt
                     }
                 }
+                if let waiting = sessions.firstWaiting {
+                    Button {
+                        sessions.show(waiting)
+                    } label: {
+                        Label(L("Another chat is waiting for your answer", "Başka bir sohbet cevabını bekliyor"),
+                              systemImage: "exclamationmark.bubble")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Palette.yellow)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                    }
+                }
                 composer
             }
             .background(Palette.background)
@@ -169,7 +195,7 @@ struct ChatView: View {
                     if viewModel.isIncognito || !viewModel.hasMessages {
                         Button {
                             inputFocused = false
-                            viewModel.startNewChat(incognito: !viewModel.isIncognito)
+                            sessions.startNewChat(incognito: !viewModel.isIncognito)
                         } label: {
                             Image(systemName: viewModel.isIncognito ? "eye.slash.fill" : "eye.slash")
                                 .foregroundStyle(viewModel.isIncognito ? Palette.purple : (viewModel.isStreaming ? Palette.textMuted : Palette.text))
@@ -190,12 +216,12 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         inputFocused = false
-                        viewModel.startNewChat()
+                        sessions.startNewChat()
                     } label: {
                         Image(systemName: "square.and.pencil")
-                            .foregroundStyle(viewModel.isStreaming ? Palette.textMuted : Palette.text)
+                            .foregroundStyle(sessions.isLocked ? Palette.textMuted : Palette.text)
                     }
-                    .disabled(viewModel.isStreaming)
+                    .disabled(sessions.isLocked)
                     .accessibilityLabel(L("New chat", "Yeni sohbet"))
                 }
             }
@@ -204,23 +230,22 @@ struct ChatView: View {
                 case .conversations:
                     ConversationsView(
                         currentID: viewModel.conversationID,
-                        isBusy: viewModel.isStreaming,
+                        isLocked: sessions.isLocked,
+                        streamingIDs: sessions.streamingIDs,
                         open: { record in
-                            viewModel.open(record)
+                            sessions.open(record)
                             path = []
                         },
-                        deletedCurrent: { viewModel.startNewChat() }
+                        deleted: { sessions.forget($0) }
                     )
                 case .projects:
                     ProjectsView(
                         startChat: { project in
-                            guard !viewModel.isStreaming else { return }
-                            viewModel.startNewChat(project: project)
+                            sessions.startNewChat(project: project)
                             path = []
                         },
                         openChat: { record in
-                            guard !viewModel.isStreaming else { return }
-                            viewModel.open(record)
+                            sessions.open(record)
                             path = []
                         }
                     )
@@ -233,13 +258,11 @@ struct ChatView: View {
                         ProjectDetailView(
                             project: project,
                             startChat: { project in
-                                guard !viewModel.isStreaming else { return }
-                                viewModel.startNewChat(project: project)
+                                sessions.startNewChat(project: project)
                                 path = []
                             },
                             openChat: { record in
-                                guard !viewModel.isStreaming else { return }
-                                viewModel.open(record)
+                                sessions.open(record)
                                 path = []
                             }
                         )
@@ -264,6 +287,11 @@ struct ChatView: View {
                     Text(L(
                         "The assistant read web content in this chat and wants to save:\n\n\(pending.request.detail ?? "")",
                         "Asistan bu sohbette web içeriği okudu ve şunu kaydetmek istiyor:\n\n\(pending.request.detail ?? "")"
+                    ))
+                } else if pending.request.toolName == "fetch_page" {
+                    Text(L(
+                        "The assistant wants to open an address that wasn't given in this chat. Web content may have suggested it, and it could carry information from the chat:\n\n\(approvalArguments(pending.request.arguments))",
+                        "Asistan bu sohbette verilmemiş bir adresi açmak istiyor. Adresi okuduğu web içeriği önermiş olabilir ve adres sohbetteki bilgileri dışarı taşıyabilir:\n\n\(approvalArguments(pending.request.arguments))"
                     ))
                 } else {
                     Text(L(
@@ -337,18 +365,25 @@ struct ChatView: View {
                 .ignoresSafeArea()
             }
             .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: documentContentTypes) { result in
-                guard case let .success(url) = result else { return }
-                viewModel.isReadingDocument = true
+                let target = viewModel
+                let url: URL
+                switch result {
+                case let .success(picked): url = picked
+                case let .failure(error):
+                    target.errorMessage = userFacingMessage(for: error)
+                    return
+                }
+                target.isReadingDocument = true
                 Task {
                     let reading = await readDocument(from: url)
-                    viewModel.isReadingDocument = false
+                    target.isReadingDocument = false
                     guard let reading else {
-                        viewModel.errorMessage = L("No text found in this file.", "Bu dosyada metin bulunamadı.")
+                        target.errorMessage = L("No text found in this file.", "Bu dosyada metin bulunamadı.")
                         return
                     }
-                    viewModel.addDocument(text: reading.text, name: url.lastPathComponent)
+                    target.addDocument(text: reading.text, name: url.lastPathComponent)
                     if reading.skippedPages > 0 {
-                        viewModel.errorMessage = skippedPagesNote(reading.skippedPages)
+                        target.errorMessage = skippedPagesNote(reading.skippedPages)
                     }
                 }
             }
@@ -377,7 +412,7 @@ struct ChatView: View {
                 }
             }
             .onAppear {
-                viewModel.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
+                sessions.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
                 if !settings.isConfigured {
                     showingSettings = true
                 }
@@ -386,15 +421,15 @@ struct ChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: ShortcutInbox.didReceive)) { _ in
                 runShortcutRequest()
             }
-            // Cevap yazılırken gelen kestirme, cevap bitince çalışır.
-            .onChange(of: viewModel.isStreaming) {
-                if !viewModel.isStreaming { runShortcutRequest() }
+            // Gizli sohbet cevabı sürerken gelen kestirme, cevap bitince çalışır.
+            .onChange(of: sessions.isLocked) {
+                if !sessions.isLocked { runShortcutRequest() }
             }
             .onChange(of: scenePhase) {
                 switch scenePhase {
-                case .background: viewModel.appMovedToBackground()
+                case .background: sessions.appMovedToBackground()
                 case .active:
-                    viewModel.appBecameActive()
+                    sessions.appBecameActive()
                     runShortcutRequest()
                 default: break
                 }
@@ -403,22 +438,27 @@ struct ChatView: View {
     }
 
     /// Kestirmeler'den gelen istek varsa seçilen modelle yeni sohbet başlatıp gönderir.
+    /// Süren cevap beklenmez; o cevap kendi sohbetinde arkada devam eder.
     private func runShortcutRequest() {
-        guard !viewModel.isStreaming, let request = ShortcutInbox.take() else { return }
+        guard !sessions.isLocked, let request = ShortcutInbox.take() else { return }
         // Bildirim ekran ilk kez görünmeden gelebilir; bağlam hazır olsun.
-        viewModel.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
+        sessions.attach(modelContext, usage: usage, skills: skills, connectors: connectors)
         path = []
-        // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
-        let draft = viewModel.setAsideDraft()
-        viewModel.startNewChat(modelOverride: request.modelID)
-        Task {
-            await sendShortcutRequest(request)
-            viewModel.restoreDraft(draft)
+        let previous = shortcutRun
+        shortcutRun = Task {
+            await previous?.value
+            // Kestirmenin modeli sadece bu sohbette kullanılır; Ayarlar'daki seçim değişmez.
+            // Cevabı süren sohbetin taslağı kendi sohbetinde kalır.
+            let draft = viewModel.isStreaming ? nil : viewModel.setAsideDraft()
+            sessions.startNewChat(modelOverride: request.modelID)
+            let target = viewModel
+            await sendShortcutRequest(request, to: target)
+            if let draft { target.restoreDraft(draft) }
         }
     }
 
     /// Dosyaları ekleyip isteği gönderir; taranmış PDF okumak zaman alabilir.
-    private func sendShortcutRequest(_ request: ShortcutRequest) async {
+    private func sendShortcutRequest(_ request: ShortcutRequest, to target: ChatViewModel) async {
         // Kestirmeden gelen dosyalar: görseller görsel olarak, diğerleri metni çıkarılarak eklenir.
         var unreadable: [String] = []
         for file in request.files ?? [] {
@@ -429,20 +469,20 @@ struct ChatView: View {
                 continue
             }
             if UIImage(data: data) != nil {
-                await viewModel.addImage(data)
+                await target.addImage(data)
             } else if let reading = await readDocument(from: url) {
-                viewModel.addDocument(text: reading.text, name: file.originalName)
+                target.addDocument(text: reading.text, name: file.originalName)
             } else {
                 unreadable.append(file.originalName)
             }
         }
-        viewModel.input = request.prompt
-        viewModel.send(using: settings)
+        target.input = request.prompt
+        target.send(using: settings)
         // Gönderim hata mesajını temizlediği için okunamayan dosyalar en son bildirilir.
         if !unreadable.isEmpty {
             let note = L("Couldn't read the file: \(unreadable.joined(separator: ", "))",
                          "Dosya okunamadı: \(unreadable.joined(separator: ", "))")
-            viewModel.errorMessage = [viewModel.errorMessage, note].compactMap { $0 }.joined(separator: "\n")
+            target.errorMessage = [target.errorMessage, note].compactMap { $0 }.joined(separator: "\n")
         }
     }
 
@@ -457,6 +497,8 @@ struct ChatView: View {
             emptyState
                 .onTapGesture { inputFocused = false }
         }
+        // Sohbetler arası geçişte kaydırma durumu taşınmasın.
+        .id(ObjectIdentifier(viewModel))
     }
 
     @ViewBuilder
@@ -517,13 +559,13 @@ struct ChatView: View {
                 PendingAttachmentStrip(attachments: viewModel.pendingAttachments) { viewModel.removeAttachment($0) }
             }
             if recorder.isRecording {
-                RecordingBar(elapsed: recorder.elapsed, cancel: recorder.cancel) {
+                RecordingBar(elapsed: recorder.elapsed, stoppedEarly: recorder.stoppedEarly, cancel: recorder.cancel) {
                     if let recording = recorder.stop() {
                         viewModel.addAudio(recording.data, duration: recording.duration)
                     }
                 }
             } else {
-                TextField(L("Ask anything…", "Bir şey sor…"), text: $viewModel.input, prompt: Text(L("Ask anything…", "Bir şey sor…")).foregroundStyle(Palette.textMuted), axis: .vertical)
+                TextField(L("Ask anything…", "Bir şey sor…"), text: Binding(get: { viewModel.input }, set: { viewModel.input = $0 }), prompt: Text(L("Ask anything…", "Bir şey sor…")).foregroundStyle(Palette.textMuted), axis: .vertical)
                     .lineLimit(1...6)
                     .focused($inputFocused)
                     .foregroundStyle(Palette.textBright)
@@ -534,7 +576,7 @@ struct ChatView: View {
                 ModelMenu(overrideID: viewModel.modelOverrideID, onSelect: viewModel.clearModelOverride)
                 EffortMenu(overrideID: viewModel.modelOverrideID)
                 Spacer()
-                SendControl(viewModel: viewModel) {
+                SendControl(viewModel: viewModel, isRecording: recorder.isRecording) {
                     inputFocused = false
                     viewModel.send(using: settings)
                 }
@@ -551,11 +593,12 @@ struct ChatView: View {
         .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItems, maxSelectionCount: 4, matching: .images)
         .onChange(of: photoItems) {
             let items = photoItems
+            let target = viewModel
             photoItems = []
             Task {
                 for item in items {
                     if let data = try? await item.loadTransferable(type: Data.self) {
-                        await viewModel.addImage(data)
+                        await target.addImage(data)
                     }
                 }
             }
@@ -720,12 +763,12 @@ struct ChatView: View {
         Button(L("Delete", "Sil"), systemImage: "trash", role: .destructive) {
             deleting = record
         }
-        .disabled(viewModel.isStreaming && record.id == viewModel.conversationID)
+        .disabled(sessions.streamingIDs.contains(record.id))
     }
 
     private func share(_ record: ConversationRecord, pdf: Bool) {
         let title = record.title
-        let items = record.id == viewModel.conversationID ? viewModel.items : record.content.items
+        let items = sessions.session(for: record.id)?.items ?? record.content.items
         do {
             let url = pdf
                 ? try ChatExport.temporaryFile(named: title, extension: "pdf", data: ChatExport.pdf(title: title, items: items))
@@ -747,15 +790,11 @@ struct ChatView: View {
     private func move(_ record: ConversationRecord, to project: ProjectRecord?) {
         record.projectID = project?.id
         try? modelContext.save()
-        if record.id == viewModel.conversationID {
-            viewModel.setProject(project)
-        }
+        sessions.session(for: record.id)?.setProject(project)
     }
 
     private func delete(_ record: ConversationRecord) {
-        if record.id == viewModel.conversationID {
-            viewModel.startNewChat()
-        }
+        sessions.forget(record.id)
         // Sohbetteki görsellerin tam boyutlu kopyalarını da sil.
         AttachmentFiles.delete(record.content.allItems.flatMap { $0.attachments ?? [] }.compactMap(\.file))
         modelContext.delete(record)
@@ -764,15 +803,16 @@ struct ChatView: View {
 
     private func startRecording() {
         inputFocused = false
+        let target = viewModel
         Task {
             do {
                 let granted = try await recorder.start()
                 if !granted {
-                    viewModel.errorMessage = L("Microphone access is off. Turn it on in Settings > CHAY.",
-                                               "Mikrofon izni kapalı. Ayarlar > CHAY'dan açabilirsin.")
+                    target.errorMessage = L("Microphone access is off. Turn it on in Settings > CHAY.",
+                                            "Mikrofon izni kapalı. Ayarlar > CHAY'dan açabilirsin.")
                 }
             } catch {
-                viewModel.errorMessage = userFacingMessage(for: error)
+                target.errorMessage = userFacingMessage(for: error)
             }
         }
     }
@@ -1242,9 +1282,12 @@ private struct FinishedMarkdown: View, Equatable {
 /// Gönder/durdur düğmesi. Metni burada okur; yazarken ekranın geri kalanı yenilenmez.
 private struct SendControl: View {
     let viewModel: ChatViewModel
+    /// Kayıt sürerken gönderilmez: kayıt mesaja eklenmeden gider, kullanıcı yazdığı metni de göremez.
+    let isRecording: Bool
     let send: () -> Void
 
     var body: some View {
+        let canSend = viewModel.canSend && !isRecording
         if viewModel.isStreaming {
             Button {
                 viewModel.stop()
@@ -1262,9 +1305,9 @@ private struct SendControl: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Palette.background)
                     .frame(width: 32, height: 32)
-                    .background(viewModel.canSend ? Palette.blue : Palette.border, in: .circle)
+                    .background(canSend ? Palette.blue : Palette.border, in: .circle)
             }
-            .disabled(!viewModel.canSend)
+            .disabled(!canSend)
             .accessibilityLabel(L("Send", "Gönder"))
         }
     }

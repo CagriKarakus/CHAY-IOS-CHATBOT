@@ -1,0 +1,10 @@
+"Ask CHAY" = "CHAY'a sor";
+"Opens CHAY and sends the prompt in a new chat, using the model you choose. For RSS news, put the feed URLs in the prompt." = "CHAY'ı açar ve komutu seçtiğin modelle yeni bir sohbette gönderir. RSS haberleri için akış adreslerini komuta yaz.";
+"Prompt" = "Komut";
+"Files" = "Dosyalar";
+"Ask CHAY ${prompt}" = "CHAY'a sor: ${prompt}";
+"Run CHAY Task" = "CHAY görevini çalıştır";
+"Opens CHAY and runs one of your scheduled tasks in a new chat." = "CHAY'ı açar ve zamanlanmış görevlerinden birini yeni bir sohbette çalıştırır.";
+"Task" = "Görev";
+"Run ${task}" = "${task} görevini çalıştır";
+"CHAY Task" = "CHAY görevi";

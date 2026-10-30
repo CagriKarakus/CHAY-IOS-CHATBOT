@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Görsel kabul eden modellere göndermek için fotoğraf çeker.";
+"NSMicrophoneUsageDescription" = "Ses kabul eden modellere göndermek için ses mesajı kaydeder.";
+"NSPhotoLibraryAddUsageDescription" = "Asistanın ürettiği görselleri fotoğraf arşivine kaydeder.";

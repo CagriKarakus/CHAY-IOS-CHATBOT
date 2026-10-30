@@ -7,9 +7,26 @@ struct ScheduledTasksView: View {
     let run: (ScheduledTask) -> Void
 
     @Environment(ScheduledTaskLibrary.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var notificationsDenied = false
 
     var body: some View {
         List {
+            if notificationsDenied {
+                Section {
+                    Label(L("Notifications are off, so reminders can't arrive.", "Bildirimler kapalı olduğu için hatırlatmalar gelemez."),
+                          systemImage: "bell.slash")
+                        .foregroundStyle(Palette.yellow)
+                    Button(L("Open Settings", "Ayarları aç")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+                .listRowBackground(Palette.surface)
+            }
+
             Section {
                 ForEach(library.tasks) { task in
                     NavigationLink {
@@ -25,6 +42,11 @@ struct ScheduledTasksView: View {
                                 Text(verbatim: "\(task.timeText) · \(task.daysText)")
                                     .font(.caption)
                                     .foregroundStyle(Palette.textMuted)
+                                if let id = task.modelID, !settings.allModels.contains(where: { $0.model.id == id }) {
+                                    Text(L("Its model was removed; the selected model is used.", "Modeli silinmiş; seçili model kullanılır."))
+                                        .font(.caption)
+                                        .foregroundStyle(Palette.yellow)
+                                }
                             }
                         }
                     }
@@ -80,6 +102,10 @@ struct ScheduledTasksView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        // Ayarlar'dan dönünce de yenilenir.
+        .task(id: scenePhase) {
+            notificationsDenied = await TurnNotifications.areDenied()
+        }
     }
 
     private func step(_ number: Int, _ text: String) -> some View {
@@ -135,6 +161,9 @@ private struct ScheduledTaskEditor: View {
                     .lineLimit(3...10)
                 Picker(L("Model", "Model"), selection: $draft.modelID) {
                     Text(L("Selected model", "Seçili model")).tag(UUID?.none)
+                    if let id = draft.modelID, !settings.allModels.contains(where: { $0.model.id == id }) {
+                        Text(L("Removed model", "Silinmiş model")).tag(Optional(id))
+                    }
                     ForEach(settings.allModels) { option in
                         Text("\(option.model.name) · \(option.provider.name)").tag(Optional(option.model.id))
                     }
@@ -161,6 +190,8 @@ private struct ScheduledTaskEditor: View {
                                 .background(selected ? Palette.blue : Palette.elevated, in: .circle)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(Calendar.current.weekdaySymbols[day - 1])
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
                 Toggle(L("Remind with a notification", "Bildirimle hatırlat"), isOn: $draft.remind)

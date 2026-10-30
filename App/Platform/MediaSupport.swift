@@ -36,6 +36,8 @@ final class AudioRecorder {
 
     private(set) var isRecording = false
     private(set) var elapsed: TimeInterval = 0
+    /// Kayıt kendiliğinden durdu: telefon araması gibi bir kesinti veya süre sınırı. Alınan kısım eklenebilir.
+    private(set) var stoppedEarly = false
     private var recorder: AVAudioRecorder?
     private var timer: Task<Void, Never>?
 
@@ -63,13 +65,17 @@ final class AudioRecorder {
         recorder.record(forDuration: Self.maxDuration)
         self.recorder = recorder
         isRecording = true
+        stoppedEarly = false
         elapsed = 0
         timer = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard let self, let recorder = self.recorder else { return }
+                guard recorder.isRecording else {
+                    self.stoppedEarly = true
+                    return
+                }
                 self.elapsed = recorder.currentTime
-                if !recorder.isRecording { return }
             }
         }
         return true

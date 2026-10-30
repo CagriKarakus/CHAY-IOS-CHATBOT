@@ -49,6 +49,8 @@ final class ScheduledTaskLibrary {
     private static let notificationPrefix = "scheduled."
 
     private(set) var tasks: [ScheduledTask] = []
+    /// Son yeniden kurma; art arda değişiklikler birbirinin bildirimini silmesin diye sırayla çalışır.
+    private var rescheduling: Task<Void, Never>?
 
     init() {
         tasks = Self.load()
@@ -104,7 +106,9 @@ final class ScheduledTaskLibrary {
         let center = UNUserNotificationCenter.current()
         let tasks = self.tasks
         let prefix = Self.notificationPrefix
-        Task {
+        let previous = rescheduling
+        rescheduling = Task {
+            await previous?.value
             let old = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
             center.removePendingNotificationRequests(withIdentifiers: old)
             for task in tasks where task.enabled && task.remind {

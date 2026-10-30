@@ -196,18 +196,19 @@ struct CameraPicker: UIViewControllerRepresentable {
 /// Kayıt sürerken giriş kutusunda görünen çubuk.
 struct RecordingBar: View {
     let elapsed: TimeInterval
+    let stoppedEarly: Bool
     let cancel: () -> Void
     let finish: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
             Circle()
-                .fill(Palette.red)
+                .fill(stoppedEarly ? Palette.textMuted : Palette.red)
                 .frame(width: 10, height: 10)
             Text(Duration.seconds(elapsed).formatted(.time(pattern: .minuteSecond)))
                 .monospacedDigit()
                 .foregroundStyle(Palette.textBright)
-            Text(L("Recording…", "Kaydediliyor…"))
+            Text(stoppedEarly ? L("Recording stopped", "Kayıt durdu") : L("Recording…", "Kaydediliyor…"))
                 .foregroundStyle(Palette.textMuted)
             Spacer()
             Button(L("Cancel", "Vazgeç"), action: cancel)
@@ -225,6 +226,7 @@ struct GeneratedImageView: View {
     let name: String
     let show: (UIImage) -> Void
     @State private var saved = false
+    @State private var saveError: String?
     @State private var image: UIImage?
     @State private var missing = false
 
@@ -251,6 +253,8 @@ struct GeneratedImageView: View {
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .onTapGesture { show(image) }
+                    .accessibilityLabel(L("Generated image", "Üretilen görsel"))
+                    .accessibilityAddTraits(.isButton)
                     .contextMenu {
                         Button(L("Save to Photos", "Fotoğraflar'a kaydet"), systemImage: "square.and.arrow.down") {
                             saveToPhotos(image)
@@ -263,6 +267,11 @@ struct GeneratedImageView: View {
                     Label(L("Saved to Photos", "Fotoğraflar'a kaydedildi"), systemImage: "checkmark")
                         .font(.caption)
                         .foregroundStyle(Palette.green)
+                }
+                if let saveError {
+                    Label(saveError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Palette.red)
                 }
             }
         } else if missing {
@@ -277,11 +286,20 @@ struct GeneratedImageView: View {
 
     private func saveToPhotos(_ image: UIImage) {
         Task {
-            guard await PHPhotoLibrary.requestAuthorization(for: .addOnly) == .authorized else { return }
-            try? await PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            saved = false
+            saveError = nil
+            guard await PHPhotoLibrary.requestAuthorization(for: .addOnly) == .authorized else {
+                saveError = L("Photo access is off. Turn it on in Settings > CHAY.", "Fotoğraf izni kapalı. Ayarlar > CHAY'dan açabilirsin.")
+                return
             }
-            saved = true
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+                saved = true
+            } catch {
+                saveError = L("Couldn't save the image.", "Görsel kaydedilemedi.")
+            }
         }
     }
 }

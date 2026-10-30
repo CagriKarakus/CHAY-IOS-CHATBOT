@@ -4,8 +4,12 @@ import SwiftUI
 /// Claude tarzı kenar menüsü: arama, Projeler, Dokümanlar, sabitlenen ve son sohbetler; altta Ayarlar ve Yeni sohbet.
 struct SidebarView<ChatMenu: View>: View {
     let currentID: UUID?
-    /// Cevap yazılırken başka sohbete geçilemez.
-    let isBusy: Bool
+    /// Gizli sohbet cevabı sürerken başka sohbete geçilemez.
+    let isLocked: Bool
+    /// Cevabı süren sohbetler.
+    let streamingIDs: Set<UUID>
+    /// Arkada kalıp kullanıcının onayını bekleyen sohbetler.
+    let waitingIDs: Set<UUID>
     let openChat: (ConversationRecord) -> Void
     let openProjects: () -> Void
     let openProject: (ProjectRecord) -> Void
@@ -110,8 +114,8 @@ struct SidebarView<ChatMenu: View>: View {
                         .frame(height: 52)
                         .background(Palette.textBright, in: .capsule)
                 }
-                .disabled(isBusy)
-                .opacity(isBusy ? 0.5 : 1)
+                .disabled(isLocked)
+                .opacity(isLocked ? 0.5 : 1)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
@@ -170,17 +174,29 @@ struct SidebarView<ChatMenu: View>: View {
         Button {
             openChat(record)
         } label: {
-            Text(record.title)
-                .lineLimit(1)
-                .foregroundStyle(Palette.textBright)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
-                .background(record.id == currentID ? Palette.elevated : .clear, in: .rect(cornerRadius: 14))
-                .contentShape(.rect)
+            HStack(spacing: 8) {
+                Text(record.title)
+                    .lineLimit(1)
+                    .foregroundStyle(Palette.textBright)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if waitingIDs.contains(record.id) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(Palette.yellow)
+                        .accessibilityLabel(L("Waiting for your answer", "Cevabını bekliyor"))
+                } else if streamingIDs.contains(record.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Palette.textMuted)
+                        .accessibilityLabel(L("Answering", "Cevap yazılıyor"))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(record.id == currentID ? Palette.elevated : .clear, in: .rect(cornerRadius: 14))
+            .contentShape(.rect)
         }
-        .disabled(isBusy)
-        .opacity(isBusy && record.id != currentID ? 0.5 : 1)
+        .disabled(isLocked)
+        .opacity(isLocked && record.id != currentID ? 0.5 : 1)
         .padding(.leading, indented ? 44 : 0)
         .contextMenu {
             chatMenu(record)

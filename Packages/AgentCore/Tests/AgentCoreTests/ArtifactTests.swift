@@ -18,7 +18,7 @@ private func arguments(_ title: String, _ html: String) throws -> String {
     #expect(url.lastPathComponent == "Satış Grafiği.html")
     #expect(first.content.hasPrefix("Artifact created: Satış Grafiği.html"))
     #expect(second.content.hasPrefix("Artifact updated"))
-    #expect(try String(contentsOf: url, encoding: .utf8) == "<html><body>v2</body></html>")
+    #expect(try String(contentsOf: url, encoding: .utf8).hasSuffix("<html><body>v2</body></html>"))
     #expect(tool.activityDetail(for: try arguments("Oyun", "x")) == "Oyun")
 }
 
