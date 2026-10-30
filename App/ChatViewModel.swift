@@ -877,6 +877,8 @@ final class ChatViewModel {
         // Araç çağıramayan modele araç gönderilmez; sunucu bunu hata sayabilir.
         let usesTools = selected.model.supportsTools != false
         let baseTools = usesTools ? tools : []
+        // Sağlayıcı aramasının içeriği işaretsiz geldiği için kaynak içeren sohbetler güvenilmez sayılır.
+        let chatHasWebSources = items.contains { !$0.sources.isEmpty }
         let fallbacks = fallbackModels(for: selected, settings: settings, transport: transport)
         turnFallbackCount = fallbacks.count
         let connectorSelection = selectedConnectorIDs
@@ -906,7 +908,8 @@ final class ChatViewModel {
                     skills: skills,
                     project: project,
                     connectors: connectorSummary,
-                    toolsAvailable: usesTools
+                    toolsAvailable: usesTools,
+                    serverSearch: configuration.serverTools != nil
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 // Bağlayıcı araçları; araç listesi hiç alınmamışsa önce sunucuya bağlanılır.
@@ -924,7 +927,8 @@ final class ChatViewModel {
                     fallbacks: fallbacks,
                     shouldFallBack: { [weak self] error in
                         await self?.canFallBack(after: error) ?? false
-                    }
+                    },
+                    assumeUntrusted: chatHasWebSources
                 )
                 for try await event in agent.run(messages) {
                     apply(event, to: reply.id)
@@ -1020,17 +1024,21 @@ final class ChatViewModel {
             for source in sources where !items[index].sources.contains(where: { $0.url == source.url }) {
                 items[index].sources.append(source)
             }
+        case .serverToolsUnavailable:
+            discardPartialStep(at: index)
+            addNotice(L("The provider's web search isn't available, so CHAY's own search is used.",
+                        "Sağlayıcının web araması kullanılamadı; CHAY'in kendi araması kullanılıyor."), at: index)
+        case let .sources(sources):
+            for source in sources where !items[index].sources.contains(where: { $0.url == source.url }) {
+                items[index].sources.append(source)
+            }
         case let .modelSwitched(id, name):
             // Yarıda kalan adımın metni atılır; yedek model adımı baştan üretir.
-            if !pendingStepText.isEmpty, items[index].text.hasSuffix(pendingStepText) {
-                items[index].text.removeLast(pendingStepText.count)
-            }
-            pendingStepText = ""
-            items[index].preparing = nil
+            discardPartialStep(at: index)
             let previous = currentModel?.name ?? ""
             let note = L("\(previous) couldn't answer, so \(name) continued.",
                          "\(previous) cevap veremedi; \(name) ile devam edildi.")
-            items[index].notice = [items[index].notice, note].compactMap { $0 }.joined(separator: "\n")
+            addNotice(note, at: index)
             if let selected = lastSettings?.selection(for: id) {
                 currentModel = (selected.provider.id, selected.model.name, selected.model.id)
             }
@@ -1043,10 +1051,26 @@ final class ChatViewModel {
         case let .usage(usage):
             items[index].usage = items[index].usage.map { $0 + usage } ?? usage
             lastPromptTokens = usage.promptTokens
+            if let searches = usage.webSearchRequests, searches > 0 {
+                usageTracker?.recordProviderSearches(searches)
+            }
             if let currentModel {
                 usageTracker?.record(usage, providerID: currentModel.providerID, model: currentModel.name, modelID: currentModel.id)
             }
         }
+    }
+
+    /// Adım yeniden üretilecekse yarıda kalan metni atar.
+    private func discardPartialStep(at index: Int) {
+        if !pendingStepText.isEmpty, items[index].text.hasSuffix(pendingStepText) {
+            items[index].text.removeLast(pendingStepText.count)
+        }
+        pendingStepText = ""
+        items[index].preparing = nil
+    }
+
+    private func addNotice(_ note: String, at index: Int) {
+        items[index].notice = [items[index].notice, note].compactMap { $0 }.joined(separator: "\n")
     }
 
     /// Açık sohbeti kaydeder; ilk kayıtta yeni bir `ConversationRecord` oluşturur.

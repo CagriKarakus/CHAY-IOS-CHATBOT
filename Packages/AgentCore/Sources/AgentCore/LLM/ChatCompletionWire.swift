@@ -1,11 +1,14 @@
+import Foundation
+
 // `/chat/completions` istek ve yanıtlarının JSON biçimleri.
 
 struct ChatCompletionRequest: Encodable {
     let model: String
     let messages: [WireMessage]
     let stream: Bool
-    let tools: [ToolDefinition]?
+    let tools: [RequestTool]?
     let reasoningEffort: ReasoningEffort?
+    let maxToolCalls: Int?
     /// Streaming'de son parçada token kullanımını ister.
     let streamOptions = StreamOptions()
 
@@ -16,7 +19,22 @@ struct ChatCompletionRequest: Encodable {
     enum CodingKeys: String, CodingKey {
         case model, messages, stream, tools
         case reasoningEffort = "reasoning_effort"
+        case maxToolCalls = "max_tool_calls"
         case streamOptions = "stream_options"
+    }
+}
+
+/// `tools` dizisinin elemanı: uygulamanın çalıştırdığı fonksiyon veya sağlayıcının çalıştırdığı araç.
+enum RequestTool: Encodable {
+    case function(ToolDefinition)
+    case server(JSONValue)
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .function(definition): try container.encode(definition)
+        case let .server(value): try container.encode(value)
+        }
     }
 }
 
@@ -123,22 +141,53 @@ public struct ToolDefinition: Encodable, Equatable, Sendable {
 struct ChatCompletionChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
+            /// Sağlayıcının aramasından gelen kaynak (`type: "url_citation"`).
+            struct Annotation: Decodable {
+                struct Citation: Decodable {
+                    let url: String?
+                    let title: String?
+                }
+                let url_citation: Citation?
+            }
+
             let content: String?
             let reasoning: String?
             let reasoningContent: String?
             let toolCalls: [ToolCallDelta]?
+            let annotations: [Annotation]?
 
             enum CodingKeys: String, CodingKey {
-                case content, reasoning
+                case content, reasoning, annotations
                 case reasoningContent = "reasoning_content"
                 case toolCalls = "tool_calls"
+            }
+
+            /// Sadece web adresleri; başlık yoksa alan adı gösterilir.
+            var citations: [Source] {
+                (annotations ?? []).compactMap { annotation in
+                    guard let citation = annotation.url_citation,
+                          let url = citation.url.flatMap(URL.init(string:)),
+                          ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+                    else { return nil }
+                    let title = citation.title?.isEmpty == false ? citation.title : url.host
+                    return Source(title: title ?? url.absoluteString, url: url)
+                }
             }
         }
         let delta: Delta?
     }
     struct Usage: Decodable {
+        struct ServerToolUse: Decodable {
+            let web_search_requests: Int?
+        }
         let prompt_tokens: Int?
         let completion_tokens: Int?
+        let server_tool_use_details: ServerToolUse?
+        let server_tool_use: ServerToolUse?
+
+        var webSearchRequests: Int? {
+            (server_tool_use_details ?? server_tool_use)?.web_search_requests
+        }
     }
     let choices: [Choice]
     let usage: Usage?

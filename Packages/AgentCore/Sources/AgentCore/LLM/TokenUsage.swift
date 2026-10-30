@@ -4,11 +4,14 @@ public struct TokenUsage: Equatable, Codable, Sendable {
     public var completionTokens: Int
     /// İlk ve son akış parçası arasındaki süre (saniye); token/saniye hesabı için.
     public var generationSeconds: Double?
+    /// Sağlayıcının kendi yaptığı web araması sayısı.
+    public var webSearchRequests: Int?
 
-    public init(promptTokens: Int, completionTokens: Int, generationSeconds: Double? = nil) {
+    public init(promptTokens: Int, completionTokens: Int, generationSeconds: Double? = nil, webSearchRequests: Int? = nil) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.generationSeconds = generationSeconds
+        self.webSearchRequests = webSearchRequests
     }
 
     public var totalTokens: Int {
@@ -29,10 +32,12 @@ public struct TokenUsage: Equatable, Codable, Sendable {
         case let (nil, right?): right
         case (nil, nil): nil
         }
+        let searches = lhs.webSearchRequests.map { $0 + (rhs.webSearchRequests ?? 0) } ?? rhs.webSearchRequests
         return TokenUsage(
             promptTokens: lhs.promptTokens + rhs.promptTokens,
             completionTokens: lhs.completionTokens + rhs.completionTokens,
-            generationSeconds: seconds
+            generationSeconds: seconds,
+            webSearchRequests: searches
         )
     }
 }

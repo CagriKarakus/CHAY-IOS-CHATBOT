@@ -38,6 +38,8 @@ final class UsageTracker {
         var otherSearches: [String: Int]?
         /// Sağlayıcının bildirdiği günlük kalan token (anahtar: provider id); eski kayıtlarda yok.
         var dailyRemaining: [String: DailyRemaining]?
+        /// Sağlayıcıların kendi yaptığı web aramaları; eski kayıtlarda yok.
+        var providerSearches: Int?
         /// Model başına günlük/aylık token (anahtar: model id); eski kayıtlarda yok.
         var periods: [String: PeriodUsage]?
         var since = Date()
@@ -149,6 +151,13 @@ final class UsageTracker {
             snapshot.otherSearches = snapshot.otherSearches ?? [:]
             snapshot.otherSearches?[provider.rawValue, default: 0] += 1
         }
+        save()
+    }
+
+    var providerSearches: Int { snapshot.providerSearches ?? 0 }
+
+    func recordProviderSearches(_ count: Int) {
+        snapshot.providerSearches = providerSearches + count
         save()
     }
 

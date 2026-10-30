@@ -29,7 +29,7 @@ Son sürüm **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - **Uzun sohbetler**: bağlam büyüyünce eski araç sonuçları kısaltılır, eski mesajlar özetlenir
 
 ### Araçlar
-- **Web araştırması**: Tavily, Brave Search, kendi SearXNG sunucun veya **key gerektirmeyen DuckDuckGo**. Tavily veya Brave key'i yoksa, geçersizse ya da kota bittiyse aramalar kendiliğinden DuckDuckGo ile yapılır
+- **Web araştırması**: destekleyen sağlayıcının kendi araması (OpenRouter) ya da Tavily, Brave Search, kendi SearXNG sunucun veya **key gerektirmeyen DuckDuckGo**. Tavily veya Brave key'i yoksa, geçersizse ya da kota bittiyse aramalar kendiliğinden DuckDuckGo ile yapılır
 - **Sayfa ve akış okuma** (HTML, RSS, Atom); kaynaklar cevapta belirtilir
 - Telefonun JavaScript motoruyla, sıkı bir izin listesi kontrolünden sonra çalışan **hesap makinesi**
 - Uygulamada açılan ve Dosyalar uygulamasında görünen **Markdown dokümanları** ve **artifact'ler** (etkileşimli HTML sayfaları)
@@ -123,6 +123,6 @@ CHAY [Apache License 2.0](LICENSE) ile yayınlanmıştır. Üçüncü taraf pake
 ## Yol haritası
 
 - iCloud senkronizasyonu ve Share Extension (ücretli geliştirici hesabı gerekir)
-- Sağlayıcıların yerleşik web araması ve görsel üretimi (önce OpenRouter); desteklemeyenlerde uygulamanın kendi araçları
+- Sağlayıcıların yerleşik görsel üretimi ve daha fazla sağlayıcıda web araması
 - Face ID kilidi
 - Cihaz üzerinde çalışan modeller

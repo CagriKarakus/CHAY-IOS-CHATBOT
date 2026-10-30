@@ -11,6 +11,8 @@ public enum LLMStreamEvent: Equatable, Sendable {
     case toolCalls([ToolCall])
     /// Sunucu bildirdiyse çağrının token kullanımı; en sonda bir kez gelir.
     case usage(TokenUsage)
+    /// Sağlayıcının kendi aramasından gelen kaynaklar.
+    case citations([Source])
 }
 
 /// OpenAI-uyumlu `/chat/completions` istemcisi (SSE streaming).
@@ -23,12 +25,28 @@ public struct LLMClient: Sendable {
         self.transport = transport
     }
 
+    var serverTools: ServerTools? {
+        configuration.serverTools
+    }
+
+    /// Aynı model, sağlayıcının yerleşik araçları olmadan.
+    func withoutServerTools() -> LLMClient {
+        var plain = configuration
+        plain.serverTools = nil
+        return LLMClient(configuration: plain, transport: transport)
+    }
+
     /// Cevabı geldikçe olaylar olarak döndürür. Akışı tüketen görev iptal edilirse istek de iptal edilir.
-    public func streamChat(_ messages: [ChatMessage], tools: [ToolDefinition] = []) -> AsyncThrowingStream<LLMStreamEvent, any Error> {
+    /// `useServerTools`: sağlayıcının yerleşik araçları da gönderilsin (özetleme gibi araçsız çağrılarda gönderilmez).
+    public func streamChat(
+        _ messages: [ChatMessage],
+        tools: [ToolDefinition] = [],
+        useServerTools: Bool = false
+    ) -> AsyncThrowingStream<LLMStreamEvent, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await run(messages, tools: tools) { continuation.yield($0) }
+                    try await run(messages, tools: tools, useServerTools: useServerTools) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -89,14 +107,17 @@ public struct LLMClient: Sendable {
         return card.info
     }
 
-    func makeRequest(_ messages: [ChatMessage], tools: [ToolDefinition] = []) throws -> HTTPRequest {
+    func makeRequest(_ messages: [ChatMessage], tools: [ToolDefinition] = [], useServerTools: Bool = false) throws -> HTTPRequest {
+        let server = useServerTools ? configuration.serverTools : nil
+        let requestTools = tools.map(RequestTool.function) + (server?.tools ?? []).map(RequestTool.server)
         let body = try JSONEncoder().encode(
             ChatCompletionRequest(
                 model: configuration.model,
                 messages: messages.map(WireMessage.init),
                 stream: true,
-                tools: tools.isEmpty ? nil : tools,
-                reasoningEffort: configuration.reasoningEffort
+                tools: requestTools.isEmpty ? nil : requestTools,
+                reasoningEffort: configuration.reasoningEffort,
+                maxToolCalls: server?.maxToolCalls
             )
         )
         return HTTPRequest(
@@ -111,7 +132,7 @@ public struct LLMClient: Sendable {
         )
     }
 
-    private func run(_ messages: [ChatMessage], tools: [ToolDefinition], onEvent: (LLMStreamEvent) -> Void) async throws {
+    private func run(_ messages: [ChatMessage], tools: [ToolDefinition], useServerTools: Bool, onEvent: (LLMStreamEvent) -> Void) async throws {
         let decoder = JSONDecoder()
         var toolCalls = ToolCallAccumulator()
         var usage: ChatCompletionChunk.Usage?
@@ -120,7 +141,7 @@ public struct LLMClient: Sendable {
         var firstChunk: ContinuousClock.Instant?
         var lastChunk: ContinuousClock.Instant?
         do {
-            lines: for try await line in transport.lines(for: try makeRequest(messages, tools: tools)) {
+            lines: for try await line in transport.lines(for: try makeRequest(messages, tools: tools, useServerTools: useServerTools)) {
                 switch SSELine(line) {
                 case .ignored:
                     continue
@@ -141,6 +162,10 @@ public struct LLMClient: Sendable {
                         }
                         if let text = delta.content, !text.isEmpty {
                             onEvent(.text(text))
+                        }
+                        let citations = delta.citations
+                        if !citations.isEmpty {
+                            onEvent(.citations(citations))
                         }
                         delta.toolCalls?.forEach { toolCalls.add($0) }
                         if let progress = toolCalls.progressUpdate() {
@@ -164,7 +189,8 @@ public struct LLMClient: Sendable {
             onEvent(.usage(TokenUsage(
                 promptTokens: usage.prompt_tokens ?? 0,
                 completionTokens: usage.completion_tokens ?? 0,
-                generationSeconds: seconds
+                generationSeconds: seconds,
+                webSearchRequests: usage.webSearchRequests
             )))
         }
     }

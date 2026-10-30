@@ -124,6 +124,21 @@ struct ProviderEditorView: View {
             }
             .listRowBackground(Palette.surface)
 
+            if draft.availableServerTools != nil {
+                Section {
+                    Toggle(L("Use the provider's web search", "Sağlayıcının web aramasını kullan"), isOn: Binding(
+                        get: { draft.usesBuiltInFeatures != false },
+                        set: { draft.usesBuiltInFeatures = $0 }
+                    ))
+                } footer: {
+                    footer(L(
+                        "The provider searches on its side and returns sources, even with free models. Searches are billed separately (about $0.007 each on OpenRouter). Turn it off to use CHAY's own search; it's also used automatically if the provider refuses, for example with no credit.",
+                        "Sağlayıcı aramayı kendi tarafında yapar ve kaynakları döndürür; ücretsiz modellerde de çalışır. Aramalar ayrıca ücretlendirilir (OpenRouter'da arama başına yaklaşık $0,007). CHAY'in kendi aramasını kullanmak için kapat; sağlayıcı reddederse, örneğin kredi yoksa, kendiliğinden o kullanılır."
+                    ))
+                }
+                .listRowBackground(Palette.surface)
+            }
+
             fallbackSection
 
             if let errorMessage {

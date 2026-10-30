@@ -16,6 +16,10 @@ public enum AgentEvent: Equatable, Sendable {
     case usage(TokenUsage)
     /// Model hata verdi, sıradaki yedekle devam ediliyor. Yarıda kalan adımın metni geçersizdir.
     case modelSwitched(id: UUID, name: String)
+    /// Sağlayıcının yerleşik araçları kullanılamadı; adım yerel araçlarla yeniden yapılıyor.
+    case serverToolsUnavailable
+    /// Sağlayıcının kendi aramasından gelen kaynaklar.
+    case sources([Source])
 }
 
 /// Asıl model yoğunluk veya sunucu hatası verince sırayla denenen model.
@@ -51,12 +55,15 @@ public struct AgentLoop: Sendable {
     private let refreshTools: (@Sendable () async -> [any Tool])?
     private let fallbacks: [FallbackModel]
     private let shouldFallBack: @Sendable (any Error) async -> Bool
+    private let assumeUntrusted: Bool
 
     /// `maxSteps`: bir istekte modele en fazla kaç kez gidileceği. Son adımda araç verilmez, model cevap vermek zorunda kalır.
     /// `approve`: onay gerektiren araç çağrılarında kullanıcıya sorar; verilmezse bu çağrılar reddedilir.
     /// `refreshTools`: her adımdan önce güncel araç listesini verir (ör. turda yeni bağlanan bağlayıcılar için).
     /// `fallbacks`: model hata verince sırayla denenir; turun kalanı çalışan modelle sürer.
     /// `shouldFallBack`: hatanın yedeğe geçirip geçirmeyeceği.
+    /// `assumeUntrusted`: sohbette önceden sağlayıcı araması kullanıldı; o içerik işaretsiz geldiği için
+    /// kalıcı işlemler yine onay ister.
     public init(
         client: LLMClient,
         tools: [any Tool],
@@ -64,7 +71,8 @@ public struct AgentLoop: Sendable {
         approve: @escaping Approver = { _ in false },
         refreshTools: (@Sendable () async -> [any Tool])? = nil,
         fallbacks: [FallbackModel] = [],
-        shouldFallBack: @escaping @Sendable (any Error) async -> Bool = { ($0 as? LLMError)?.isTemporary ?? false }
+        shouldFallBack: @escaping @Sendable (any Error) async -> Bool = { ($0 as? LLMError)?.isTemporary ?? false },
+        assumeUntrusted: Bool = false
     ) {
         self.client = client
         self.tools = Self.index(tools)
@@ -73,6 +81,13 @@ public struct AgentLoop: Sendable {
         self.refreshTools = refreshTools
         self.fallbacks = fallbacks
         self.shouldFallBack = shouldFallBack
+        self.assumeUntrusted = assumeUntrusted
+    }
+
+    /// Sağlayıcının yerleşik aracı reddettiğini gösteren hatalar: kredi yok (402), model veya istek desteklemiyor.
+    private static func rejectsServerTools(_ error: any Error) -> Bool {
+        guard case let .http(status, _) = error as? LLMError else { return false }
+        return [400, 402, 404, 422].contains(status)
     }
 
     private static func index(_ tools: [any Tool]) -> [String: any Tool] {
@@ -98,6 +113,7 @@ public struct AgentLoop: Sendable {
         var tools = self.tools
         var activeClient = client
         var remainingFallbacks = fallbacks[...]
+        var untrusted = assumeUntrusted
 
         for step in 1...maxSteps {
             if let refreshTools {
@@ -106,11 +122,15 @@ public struct AgentLoop: Sendable {
             let definitions = tools.values.map(\.definition).sorted { $0.function.name < $1.function.name }
             var text = ""
             var calls: [ToolCall] = []
-            let offeredTools = step < maxSteps ? definitions : []
+            var offeredTools: [ToolDefinition] = []
 
             attempts: while true {
+                // Sağlayıcı aramayı kendisi yapıyorsa yerel araç gönderilmez; yerleşik aracı olmayan
+                // modele geçilince yerel araç kendiliğinden geri gelir.
+                let replaced = activeClient.serverTools?.replaces ?? []
+                offeredTools = step < maxSteps ? definitions.filter { !replaced.contains($0.function.name) } : []
                 do {
-                    for try await event in activeClient.streamChat(conversation, tools: offeredTools) {
+                    for try await event in activeClient.streamChat(conversation, tools: offeredTools, useServerTools: step < maxSteps) {
                         switch event {
                         case let .text(delta):
                             text += delta
@@ -123,13 +143,22 @@ public struct AgentLoop: Sendable {
                             emit(.reasoning(thought))
                         case let .toolCallProgress(name, characters):
                             emit(.preparingTool(name: name, characters: characters))
+                        case let .citations(sources):
+                            untrusted = true
+                            emit(.sources(sources))
                         }
                     }
                     break attempts
                 } catch {
-                    guard !Task.isCancelled, !(error is CancellationError),
-                          let next = remainingFallbacks.first, await shouldFallBack(error)
-                    else { throw error }
+                    guard !Task.isCancelled, !(error is CancellationError) else { throw error }
+                    if activeClient.serverTools != nil, Self.rejectsServerTools(error) {
+                        activeClient = activeClient.withoutServerTools()
+                        text = ""
+                        calls = []
+                        emit(.serverToolsUnavailable)
+                        continue attempts
+                    }
+                    guard let next = remainingFallbacks.first, await shouldFallBack(error) else { throw error }
                     remainingFallbacks.removeFirst()
                     activeClient = next.client
                     text = ""
@@ -152,7 +181,7 @@ public struct AgentLoop: Sendable {
 
             for call in calls {
                 try Task.checkCancellation()
-                let result = try await execute(call, tools: tools, conversation: conversation, emit: emit)
+                let result = try await execute(call, tools: tools, conversation: conversation, untrusted: untrusted, emit: emit)
                 conversation.append(result)
                 emit(.message(result))
             }
@@ -160,7 +189,7 @@ public struct AgentLoop: Sendable {
     }
 
     /// Aracı çalıştırır; hataları modele metin olarak döner ki model toparlayabilsin.
-    private func execute(_ call: ToolCall, tools: [String: any Tool], conversation: [ChatMessage], emit: (AgentEvent) -> Void) async throws -> ChatMessage {
+    private func execute(_ call: ToolCall, tools: [String: any Tool], conversation: [ChatMessage], untrusted: Bool, emit: (AgentEvent) -> Void) async throws -> ChatMessage {
         guard let tool = tools[call.function.name] else {
             emit(.toolStarted(id: call.id, name: call.function.name, detail: nil))
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))
@@ -172,7 +201,7 @@ public struct AgentLoop: Sendable {
 
         // Web içeriği okunduktan sonra hafıza gibi kalıcı işlemler ve veri değiştiren bağlayıcı araçları
         // kullanıcı onayı olmadan yapılmaz.
-        if tool.requiresApproval || (tool.requiresApprovalAfterUntrustedContent && containsUntrustedContent(conversation)) {
+        if tool.requiresApproval || (tool.requiresApprovalAfterUntrustedContent && (untrusted || containsUntrustedContent(conversation))) {
             let approved = await approve(ApprovalRequest(
                 toolName: tool.name,
                 detail: detail,

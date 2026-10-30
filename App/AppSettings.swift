@@ -12,6 +12,13 @@ struct Provider: Codable, Identifiable, Hashable {
     var preset: String?
     /// Bu sağlayıcı yoğunken veya çalışmazken sırayla denenecek modeller. Eski kayıtlarda yok.
     var fallbackModelIDs: [UUID]?
+    /// Sağlayıcının yerleşik araçları (ör. web araması); `nil` = açık. Eski kayıtlarda yok.
+    var usesBuiltInFeatures: Bool?
+
+    /// Kullanıcı ayarından bağımsız olarak sağlayıcının sunduğu yerleşik araçlar.
+    var availableServerTools: ServerTools? {
+        (ProviderPreset.preset(id: preset) ?? ProviderPreset.matching(baseURL: baseURL))?.serverTools
+    }
 }
 
 struct ModelProfile: Codable, Identifiable, Hashable {
@@ -142,13 +149,17 @@ final class AppSettings {
 
     func configuration(modelID: UUID? = nil) throws -> LLMConfiguration {
         guard let selected = selection(for: modelID) else { throw LLMError.missingModel }
-        return try LLMConfiguration(
+        var configuration = try LLMConfiguration(
             baseURL: selected.provider.baseURL,
             apiKey: apiKey(for: selected.provider.id),
             model: selected.model.name,
             reasoningEffort: selected.model.supportsEffort ? selected.model.effort : nil,
             extraHeaders: headers(for: selected.provider.id)
         )
+        if selected.provider.usesBuiltInFeatures != false, selected.model.supportsTools != false {
+            configuration.serverTools = selected.provider.availableServerTools
+        }
+        return configuration
     }
 
     func headers(for providerID: UUID) -> [String: String] {

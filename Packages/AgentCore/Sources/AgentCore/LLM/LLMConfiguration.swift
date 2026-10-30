@@ -5,6 +5,28 @@ public enum ReasoningEffort: String, Codable, CaseIterable, Sendable {
     case low, medium, high
 }
 
+/// Sağlayıcının kendi sunucusunda çalıştırdığı araçlar (ör. OpenRouter web araması).
+public struct ServerTools: Equatable, Sendable {
+    /// `tools` dizisine olduğu gibi eklenen tanımlar.
+    public let tools: [JSONValue]
+    /// Bunların yerine geçtiği için modele gönderilmeyen yerel araçlar.
+    public let replaces: Set<String>
+    /// Bir istekteki sunucu aracı çağrısı sınırı; aramalar ücretli olduğu için düşük tutulur.
+    public let maxToolCalls: Int?
+
+    public init(tools: [JSONValue], replaces: Set<String>, maxToolCalls: Int?) {
+        self.tools = tools
+        self.replaces = replaces
+        self.maxToolCalls = maxToolCalls
+    }
+
+    public static let openRouterWebSearch = ServerTools(
+        tools: [["type": "openrouter:web_search", "parameters": ["max_results": 5]]],
+        replaces: ["web_search"],
+        maxToolCalls: 5
+    )
+}
+
 /// OpenAI-uyumlu bir endpoint'e bağlanmak için gereken ayarlar.
 public struct LLMConfiguration: Equatable, Sendable {
     public let baseURL: URL
@@ -14,6 +36,8 @@ public struct LLMConfiguration: Equatable, Sendable {
     public let reasoningEffort: ReasoningEffort?
     /// Bazı gateway'lerin istediği ek HTTP başlıkları (ör. Portkey: `x-portkey-api-key`).
     public let extraHeaders: [String: String]
+    /// Sağlayıcının yerleşik araçları; `nil` ise sadece yerel araçlar kullanılır.
+    public var serverTools: ServerTools?
 
     /// Değerleri temizler ve doğrular. Sadece HTTPS kabul edilir.
     public init(

@@ -743,6 +743,155 @@ private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
     #expect(try await tool.run(arguments: #"{"model":"gpt-x","provider":"Evren"}"#).content == "gpt-x|Evren")
 }
 
+// MARK: - Sağlayıcı araçları
+
+private func searchClient(_ transport: any HTTPTransport) throws -> LLMClient {
+    var configuration = try LLMConfiguration(baseURL: "https://openrouter.ai/api/v1", apiKey: "k", model: "m")
+    configuration.serverTools = .openRouterWebSearch
+    return LLMClient(configuration: configuration, transport: transport)
+}
+
+private let doneReply = [#"data: {"choices":[{"delta":{"content":"ok"}}]}"#, "data: [DONE]"]
+
+private func requestBody(_ transport: ScriptedTransport, _ index: Int = 0) -> String {
+    String(decoding: transport.requests[index].body ?? Data(), as: UTF8.self)
+}
+
+@Test func serverToolsGoWithFunctionToolsAndReplaceLocalSearch() async throws {
+    let llm = ScriptedTransport([doneReply])
+    let search = WebSearchTool(backend: .duckDuckGo, transport: MockTransport())
+    let loop = AgentLoop(client: try searchClient(llm), tools: [search, CalculatorTool(evaluate: { _ in 0 })])
+    _ = try await collect(loop)
+
+    let body = requestBody(llm)
+    #expect(body.contains(#""type":"openrouter:web_search""#))
+    #expect(body.contains(#""max_tool_calls":5"#))
+    #expect(body.contains(#""name":"calculate""#))
+    #expect(!body.contains(#""name":"web_search""#))
+}
+
+@Test func serverToolsAreLeftOutWhenNoToolsAreOffered() async throws {
+    let llm = ScriptedTransport([doneReply])
+    let loop = AgentLoop(client: try searchClient(llm), tools: [CalculatorTool(evaluate: { _ in 0 })], maxSteps: 1)
+    _ = try await collect(loop)
+    #expect(!requestBody(llm).contains("openrouter:web_search"))
+    #expect(!requestBody(llm).contains("max_tool_calls"))
+}
+
+@Test func clientReadsCitationsAndSearchCountFromOpenRouterStream() async throws {
+    let llm = ScriptedTransport([[
+        #"data: {"choices":[{"delta":{"content":"","role":"assistant","annotations":[{"type":"url_citation","url_citation":{"url":"https://www.swift.org/blog/","title":"Swift","start_index":0,"end_index":0,"content":"page text"}}]}}]}"#,
+        #"data: {"choices":[{"delta":{"content":"","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.com/a"}},{"type":"url_citation","url_citation":{"url":"javascript:alert(1)","title":"x"}},{"type":"file","file":{"hash":"h"}}]}}]}"#,
+        #"data: {"choices":[{"delta":{"content":"cevap"}}]}"#,
+        #"data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"server_tool_use_details":{"web_search_requests":1,"tool_calls_executed":1}}}"#,
+        "data: [DONE]",
+    ]])
+    let events = try await collect(AgentLoop(client: try searchClient(llm), tools: []))
+    let sources = events.flatMap { event -> [Source] in
+        if case let .sources(list) = event { list } else { [] }
+    }
+    #expect(sources == [
+        Source(title: "Swift", url: URL(string: "https://www.swift.org/blog/")!),
+        Source(title: "example.com", url: URL(string: "https://example.com/a")!),
+    ])
+    let usage = events.compactMap { event -> TokenUsage? in
+        if case let .usage(usage) = event { usage } else { nil }
+    }
+    #expect(usage.first?.webSearchRequests == 1)
+}
+
+@Test func rejectedServerToolsFallBackToLocalSearchInTheSameStep() async throws {
+    // Sırayla: önce kredi hatası, sonra yerel araçlarla cevap.
+    let llm = SequenceTransport([.failure(HTTPStatusError(statusCode: 402, body: "Insufficient credits")), .lines(doneReply)])
+    let search = WebSearchTool(backend: .duckDuckGo, transport: MockTransport())
+    let events = try await collect(AgentLoop(client: try searchClient(llm), tools: [search]))
+
+    #expect(events.contains(.serverToolsUnavailable))
+    #expect(llm.bodies.count == 2)
+    #expect(llm.bodies[0].contains("openrouter:web_search"))
+    #expect(!llm.bodies[1].contains("openrouter:web_search"))
+    #expect(llm.bodies[1].contains(#""name":"web_search""#))
+}
+
+@Test func fallbackWithoutServerToolsGetsLocalSearchBack() async throws {
+    let llm = SequenceTransport([.failure(HTTPStatusError(statusCode: 503, body: "busy"))])
+    let backup = ScriptedTransport([doneReply])
+    let search = WebSearchTool(backend: .duckDuckGo, transport: MockTransport())
+    let loop = AgentLoop(client: try searchClient(llm), tools: [search],
+                         fallbacks: [FallbackModel(id: UUID(), name: "yedek", client: try llmClient(backup))])
+    _ = try await collect(loop)
+    #expect(!requestBody(backup).contains("openrouter:web_search"))
+    #expect(requestBody(backup).contains(#""name":"web_search""#))
+}
+
+/// Sırayla hata veya satır döndüren sahte model; gönderilen gövdeleri kaydeder.
+private final class SequenceTransport: HTTPTransport, @unchecked Sendable {
+    enum Reply {
+        case failure(any Error)
+        case lines([String])
+    }
+
+    private let lock = NSLock()
+    private var replies: [Reply]
+    private var recorded: [String] = []
+
+    init(_ replies: [Reply]) {
+        self.replies = replies
+    }
+
+    var bodies: [String] { lock.withLock { recorded } }
+
+    func lines(for request: HTTPRequest) -> AsyncThrowingStream<String, any Error> {
+        let reply: Reply? = lock.withLock {
+            recorded.append(String(decoding: request.body ?? Data(), as: UTF8.self))
+            return replies.isEmpty ? nil : replies.removeFirst()
+        }
+        return AsyncThrowingStream { continuation in
+            switch reply {
+            case let .failure(error): continuation.finish(throwing: error)
+            case let .lines(lines):
+                lines.forEach { continuation.yield($0) }
+                continuation.finish()
+            case nil: continuation.finish()
+            }
+        }
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        HTTPResponse(statusCode: 500, contentType: nil, body: Data())
+    }
+}
+
+@Test func persistentActionsAskAfterProviderSearchContent() async throws {
+    let approvals = ApprovalLog()
+    let reply = [
+        #"data: {"choices":[{"delta":{"content":"","annotations":[{"type":"url_citation","url_citation":{"url":"https://a.example","title":"A"}}]}}]}"#,
+        #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"set_fallback_model","arguments":"{\"model\":\"m\"}"}}]}}]}"#,
+        "data: [DONE]",
+    ]
+    let tool = SetFallbackModelTool { _, _ in "done" }
+
+    let cited = AgentLoop(client: try searchClient(ScriptedTransport([reply, doneReply])), tools: [tool],
+                          approve: { await approvals.record($0) })
+    _ = try await collect(cited)
+    #expect(await approvals.requests.count == 1)
+
+    // Önceki turda arama yapılmış sohbet: kaynak bu turda gelmese de onay istenir.
+    let plain = [
+        #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"set_fallback_model","arguments":"{\"model\":\"m\"}"}}]}}]}"#,
+        "data: [DONE]",
+    ]
+    let earlier = AgentLoop(client: try llmClient(ScriptedTransport([plain, doneReply])), tools: [tool],
+                            approve: { await approvals.record($0) }, assumeUntrusted: true)
+    _ = try await collect(earlier)
+    #expect(await approvals.requests.count == 2)
+}
+
+@Test func openRouterPresetOffersServerTools() {
+    #expect(ProviderPreset.matching(baseURL: "https://openrouter.ai/api/v1")?.serverTools == .openRouterWebSearch)
+    #expect(ProviderPreset.matching(baseURL: "https://evren-llmapi.ssyz.org.tr/v1")?.serverTools == nil)
+}
+
 @Test func modelToolSupportComesFromSupportedParameters() throws {
     let json = #"{"data":[{"id":"a","supported_parameters":["tools","reasoning"]},{"id":"b","supported_parameters":["temperature"]},{"id":"c"}]}"#
     let models = try JSONDecoder().decode(ModelList.self, from: Data(json.utf8)).data.map(ModelInfo.init)
@@ -760,6 +909,8 @@ private func collect(_ loop: AgentLoop) async throws -> [AgentEvent] {
 
 @Test func systemPromptTellsToolLessModelsWhatTheyCantDo() {
     #expect(SystemPrompt.make(toolsAvailable: false).contains("This model has no tools"))
+    #expect(SystemPrompt.make(serverSearch: true).contains("runs on the provider's side"))
+    #expect(!SystemPrompt.make().contains("runs on the provider's side"))
     #expect(!SystemPrompt.make().contains("This model has no tools"))
 }
 

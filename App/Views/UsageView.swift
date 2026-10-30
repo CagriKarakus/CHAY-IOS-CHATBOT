@@ -53,6 +53,9 @@ struct UsageView: View {
                         valueRow(provider.title, count.formatted())
                     }
                 }
+                if usage.providerSearches > 0 {
+                    valueRow(L("Provider's own search", "Sağlayıcının kendi araması"), usage.providerSearches.formatted())
+                }
             } header: {
                 header(L("Searches from this device", "Bu cihazdan aramalar"))
             } footer: {

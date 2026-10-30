@@ -27,6 +27,11 @@ public struct ProviderPreset: Identifiable, Equatable, Sendable {
         self.headerNames = headerNames
     }
 
+    /// Sağlayıcının `/chat/completions` üzerinden sunduğu yerleşik araçlar. Yeni sağlayıcılar buraya eklenir.
+    public var serverTools: ServerTools? {
+        id == "openrouter" ? .openRouterWebSearch : nil
+    }
+
     /// Adreste doldurulması gereken yer tutucu var mı.
     public var needsEditing: Bool {
         baseURL.contains("{")

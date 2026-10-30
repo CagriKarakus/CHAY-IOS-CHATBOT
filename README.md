@@ -29,7 +29,7 @@ The latest version is **[v1.3](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Long chats**: old tool results are trimmed and older messages are summarized when the context gets large
 
 ### Tools
-- **Web research** with Tavily, Brave Search, your own SearXNG, or **DuckDuckGo with no key**. If the Tavily or Brave key is missing, invalid or out of quota, searches fall back to DuckDuckGo automatically
+- **Web research** with the provider's own search where available (OpenRouter), or with Tavily, Brave Search, your own SearXNG, or **DuckDuckGo with no key**. If the Tavily or Brave key is missing, invalid or out of quota, searches fall back to DuckDuckGo automatically
 - **Page and feed reading** (HTML, RSS, Atom) with sources cited in the reply
 - **Calculator** evaluated by the phone's JavaScript engine after a strict allow-list check
 - **Markdown documents** and **artifacts** (interactive HTML pages) that open in the app and show up in the Files app
@@ -123,6 +123,6 @@ CHAY is released under the [Apache License 2.0](LICENSE). Third-party packages k
 ## Roadmap
 
 - iCloud sync and Share Extension (need a paid developer account)
-- Providers' built-in web search and image generation (OpenRouter first), with the app's own tools as a fallback
+- Providers' built-in image generation, and web search for more providers
 - Face ID lock
 - On-device models
