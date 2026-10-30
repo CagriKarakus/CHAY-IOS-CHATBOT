@@ -32,6 +32,7 @@ The latest version is **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 - **Calculator** evaluated by the phone's JavaScript engine after a strict allow-list check
 - **Markdown documents** and **artifacts** (interactive HTML pages) that open in the app and show up in the Files app
 - **Connectors (MCP)**: add remote MCP servers (Streamable HTTP) with no auth, an access token, or **sign in with the browser** (OAuth with discovery, dynamic client registration, PKCE and token refresh). Tools that may change data ask before each run unless you allow them; connectors and their tools can be turned on or off per chat
+- **Connect from the chat**: ask "connect GitHub" and the assistant finds the address (checked list, then the official MCP registry, then the web) and opens a confirmation window. Tokens are typed only into that window and go straight to the Keychain, so the model never sees them; the new tools work in the same reply
 - **Skills** in the Agent Skills format (`SKILL.md`), imported from any GitHub repository or written by you; the model loads a skill only when a task matches
 
 ### Organizing
@@ -58,6 +59,7 @@ The latest version is **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/
 
 - API keys, connector tokens and OAuth credentials are stored only in the Keychain (`WhenUnlockedThisDeviceOnly`) and never logged
 - HTTPS only; no App Transport Security exceptions
+- Connectors found by the assistant can't be added without your confirmation; addresses outside the checked list are marked unverified, and local network addresses are refused
 - Web pages and connector results are passed to the model as clearly marked data with an instruction not to follow it
 - After web content was read, saving to memory requires your approval; connector tools that may change data ask before running
 - The file tools can only write plain names inside the app's Documents folder

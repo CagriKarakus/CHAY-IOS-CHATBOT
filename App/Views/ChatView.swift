@@ -266,6 +266,16 @@ struct ChatView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            .sheet(item: Binding(
+                get: { viewModel.pendingConnectorSetup },
+                set: { _ in }
+            )) { setup in
+                ConnectorSetupSheet(
+                    setup: setup,
+                    connect: { try await viewModel.finishConnectorSetup(token: $0, clientID: $1) },
+                    cancel: { viewModel.resolveConnectorSetup(.declined) }
+                )
+            }
             .confirmationDialog(
                 limitTitle,
                 isPresented: Binding(

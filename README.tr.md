@@ -32,6 +32,7 @@ Son sürüm **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 - Telefonun JavaScript motoruyla, sıkı bir izin listesi kontrolünden sonra çalışan **hesap makinesi**
 - Uygulamada açılan ve Dosyalar uygulamasında görünen **Markdown dokümanları** ve **artifact'ler** (etkileşimli HTML sayfaları)
 - **Bağlayıcılar (MCP)**: uzak MCP sunucuları (Streamable HTTP) kimlik doğrulamasız, erişim token'ıyla veya **tarayıcıyla giriş** (keşif, otomatik istemci kaydı, PKCE ve token yenilemeli OAuth) ile eklenir. Veri değiştirebilen araçlar, sen izin vermedikçe her çalışmadan önce sorar; bağlayıcılar ve araçları sohbet başına açılıp kapatılabilir
+- **Sohbetten bağlama**: "GitHub'ı bağla" de; asistan adresi bulur (kontrol edilmiş liste, resmi MCP kataloğu, sonra web) ve bir onay penceresi açar. Token'lar sadece bu pencereye yazılır ve doğrudan Keychain'e gider, model onları hiç görmez; yeni araçlar aynı cevapta çalışır
 - Agent Skills biçiminde (`SKILL.md`) **skill'ler**: herhangi bir GitHub reposundan eklenir veya kendin yazarsın; model bir skill'i sadece uygun bir görevde yükler
 
 ### Düzen
@@ -58,6 +59,7 @@ Son sürüm **[v1.2](https://github.com/CagriKarakus/CHAY-IOS-CHATBOT/releases/l
 
 - API key'ler, bağlayıcı token'ları ve OAuth bilgileri sadece Keychain'de (`WhenUnlockedThisDeviceOnly`) saklanır ve hiçbir zaman loglanmaz
 - Sadece HTTPS; App Transport Security istisnası yok
+- Asistanın bulduğu bağlayıcılar senin onayın olmadan eklenemez; kontrol edilmiş liste dışındaki adresler "doğrulanmamış" olarak gösterilir, yerel ağ adresleri reddedilir
 - Web sayfaları ve bağlayıcı sonuçları modele açıkça işaretlenmiş veri olarak, içindeki talimatlara uymaması söylenerek verilir
 - Web içeriği okunduktan sonra hafızaya kayıt senin onayını ister; veri değiştirebilen bağlayıcı araçları çalışmadan önce sorar
 - Dosya araçları sadece uygulamanın Documents klasörüne düz adlarla yazabilir

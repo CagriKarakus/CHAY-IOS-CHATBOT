@@ -33,14 +33,27 @@ public struct AgentLoop: Sendable {
     private let tools: [String: any Tool]
     private let maxSteps: Int
     private let approve: Approver
+    private let refreshTools: (@Sendable () async -> [any Tool])?
 
     /// `maxSteps`: bir istekte modele en fazla kaç kez gidileceği. Son adımda araç verilmez, model cevap vermek zorunda kalır.
     /// `approve`: onay gerektiren araç çağrılarında kullanıcıya sorar; verilmezse bu çağrılar reddedilir.
-    public init(client: LLMClient, tools: [any Tool], maxSteps: Int = 8, approve: @escaping Approver = { _ in false }) {
+    /// `refreshTools`: her adımdan önce güncel araç listesini verir (ör. turda yeni bağlanan bağlayıcılar için).
+    public init(
+        client: LLMClient,
+        tools: [any Tool],
+        maxSteps: Int = 8,
+        approve: @escaping Approver = { _ in false },
+        refreshTools: (@Sendable () async -> [any Tool])? = nil
+    ) {
         self.client = client
-        self.tools = Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        self.tools = Self.index(tools)
         self.maxSteps = max(1, maxSteps)
         self.approve = approve
+        self.refreshTools = refreshTools
+    }
+
+    private static func index(_ tools: [any Tool]) -> [String: any Tool] {
+        Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     public func run(_ messages: [ChatMessage]) -> AsyncThrowingStream<AgentEvent, any Error> {
@@ -59,9 +72,13 @@ public struct AgentLoop: Sendable {
 
     private func loop(_ messages: [ChatMessage], emit: (AgentEvent) -> Void) async throws {
         var conversation = messages
-        let definitions = tools.values.map(\.definition).sorted { $0.function.name < $1.function.name }
+        var tools = self.tools
 
         for step in 1...maxSteps {
+            if let refreshTools {
+                tools = Self.index(await refreshTools())
+            }
+            let definitions = tools.values.map(\.definition).sorted { $0.function.name < $1.function.name }
             var text = ""
             var calls: [ToolCall] = []
             let offeredTools = step < maxSteps ? definitions : []
@@ -96,7 +113,7 @@ public struct AgentLoop: Sendable {
 
             for call in calls {
                 try Task.checkCancellation()
-                let result = try await execute(call, conversation: conversation, emit: emit)
+                let result = try await execute(call, tools: tools, conversation: conversation, emit: emit)
                 conversation.append(result)
                 emit(.message(result))
             }
@@ -104,7 +121,7 @@ public struct AgentLoop: Sendable {
     }
 
     /// Aracı çalıştırır; hataları modele metin olarak döner ki model toparlayabilsin.
-    private func execute(_ call: ToolCall, conversation: [ChatMessage], emit: (AgentEvent) -> Void) async throws -> ChatMessage {
+    private func execute(_ call: ToolCall, tools: [String: any Tool], conversation: [ChatMessage], emit: (AgentEvent) -> Void) async throws -> ChatMessage {
         guard let tool = tools[call.function.name] else {
             emit(.toolStarted(id: call.id, name: call.function.name, detail: nil))
             emit(.toolFinished(id: call.id, sources: [], files: [], failed: true))

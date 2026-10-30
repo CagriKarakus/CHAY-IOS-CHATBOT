@@ -49,6 +49,15 @@ struct ChatVariant: Codable {
     var history: [ChatMessage]
 }
 
+/// Asistanın önerdiği, kullanıcının penceresinde onaylanması beklenen bağlayıcı.
+struct PendingConnectorSetup: Identifiable {
+    let id = UUID()
+    let proposal: ConnectorProposal
+    let auth: Connector.Auth
+    /// Bu adres için kayıtlı token var; alan boş bırakılabilir.
+    let hasSavedToken: Bool
+}
+
 /// Token limiti dolan model için yedek seçimi bekleyen istek.
 struct LimitPrompt: Identifiable {
     enum Action {
@@ -116,6 +125,8 @@ final class ChatViewModel {
     private(set) var pendingApproval: PendingApproval?
     /// Limiti dolan model için kullanıcıdan yedek bekleniyor.
     private(set) var limitPrompt: LimitPrompt?
+    /// Kurulum penceresi açıkken dolu.
+    private(set) var pendingConnectorSetup: PendingConnectorSetup?
     private(set) var pendingAttachments: [PendingAttachment] = []
     /// Açık sohbetin kaydı; ilk mesaj gönderilene kadar `nil`.
     private(set) var conversationID: UUID?
@@ -167,6 +178,9 @@ final class ChatViewModel {
     private var pendingStepText = ""
     private var turnTask: Task<Void, Never>?
     private var approvalContinuation: CheckedContinuation<Bool, Never>?
+    private var connectorSetupContinuation: CheckedContinuation<ConnectorSetupResult, Never>?
+    /// Bu turda açık bağlayıcıların araçları; turda yeni bağlanan da eklenir.
+    private var turnConnectorTools: [any Tool] = []
     private var context: ModelContext?
     private var usageTracker: UsageTracker?
     private var skillLibrary: SkillLibrary?
@@ -538,12 +552,49 @@ final class ChatViewModel {
     func stop() {
         turnTask?.cancel()
         resolveApproval(false)
+        resolveConnectorSetup(.declined)
     }
 
     func resolveApproval(_ approved: Bool) {
         approvalContinuation?.resume(returning: approved)
         approvalContinuation = nil
         pendingApproval = nil
+    }
+
+    // MARK: - Sohbetten bağlayıcı kurulumu
+
+    /// `connect_connector` aracı buraya gelir: bağlayıcı bu sohbette zaten çalışıyorsa bir şey sorulmaz,
+    /// aksi halde kurulum penceresi açılır ve kullanıcının kararı beklenir.
+    private func setUpConnector(_ proposal: ConnectorProposal) async -> ConnectorSetupResult {
+        guard let connectorLibrary else { return .failed("Connectors aren't available.") }
+        let existing = connectorLibrary.connector(matchingURL: proposal.url)
+        if let existing, isConnectorActive(existing), !existing.tools.isEmpty, !connectorLibrary.needsSignIn.contains(existing.id) {
+            return .alreadyConnected(toolCount: existing.enabledTools.count)
+        }
+        return await withCheckedContinuation { continuation in
+            connectorSetupContinuation = continuation
+            pendingConnectorSetup = PendingConnectorSetup(
+                proposal: proposal,
+                auth: existing?.auth ?? Connector.Auth(proposal.auth),
+                hasSavedToken: existing.map { !connectorLibrary.token(for: $0.id).isEmpty } ?? false
+            )
+        }
+    }
+
+    /// Penceredeki "Bağlan": başarılıysa bağlayıcı bu sohbette açılır ve araçları aynı cevapta kullanılabilir.
+    /// Hata fırlatırsa pencere açık kalır, kullanıcı tekrar deneyebilir.
+    func finishConnectorSetup(token: String, clientID: String) async throws {
+        guard let pending = pendingConnectorSetup, let connectorLibrary else { return }
+        let connector = try await connectorLibrary.connectFromChat(pending.proposal, token: token, clientID: clientID)
+        setConnector(connector, active: true)
+        turnConnectorTools = await connectorLibrary.tools(in: selectedConnectorIDs)
+        resolveConnectorSetup(.connected(toolCount: connector.enabledTools.count))
+    }
+
+    func resolveConnectorSetup(_ result: ConnectorSetupResult) {
+        connectorSetupContinuation?.resume(returning: result)
+        connectorSetupContinuation = nil
+        pendingConnectorSetup = nil
     }
 
     private func requestApproval(_ request: ApprovalRequest) async -> Bool {
@@ -699,6 +750,10 @@ final class ChatViewModel {
             WriteFileTool(directory: DocumentFile.directory),
             CalculatorTool(evaluate: javaScriptCalculator),
             CreateArtifactTool(directory: DocumentFile.directory),
+            FindConnectorTool(transport: transport),
+            ConnectConnectorTool(transport: transport) { [weak self] proposal in
+                await self?.setUpConnector(proposal) ?? .declined
+            },
         ]
         if usesMemory {
             tools += [SaveNoteTool(store: notes), ReadNotesTool(store: notes)] as [any Tool]
@@ -708,6 +763,7 @@ final class ChatViewModel {
         }
         let baseTools = tools
         let connectorSelection = selectedConnectorIDs
+        let connectorSummary = connectorLibrary?.connectors.map { (name: $0.name, active: isConnectorActive($0)) } ?? []
         let userInstructions = settings.userInstructions
 
         // Eski turların okunmuş sayfaları ve arama sonuçları kısaltılır; asıl bilgi cevaplarda zaten var.
@@ -731,16 +787,21 @@ final class ChatViewModel {
                     userInstructions: userInstructions,
                     memoryEnabled: usesMemory,
                     skills: skills,
-                    project: project
+                    project: project,
+                    connectors: connectorSummary
                 )
                 let messages = [ChatMessage(role: .system, content: systemPrompt)] + history
                 // Bağlayıcı araçları; araç listesi hiç alınmamışsa önce sunucuya bağlanılır.
-                let connectorTools = await connectorLibrary?.tools(in: connectorSelection) ?? []
+                turnConnectorTools = await connectorLibrary?.tools(in: connectorSelection) ?? []
                 let agent = AgentLoop(
                     client: client,
-                    tools: baseTools + connectorTools,
+                    tools: baseTools + turnConnectorTools,
                     approve: { [weak self] request in
                         await self?.requestApproval(request) ?? false
+                    },
+                    refreshTools: { [weak self] in
+                        let connected = await self?.turnConnectorTools ?? []
+                        return baseTools + connected
                     }
                 )
                 for try await event in agent.run(messages) {

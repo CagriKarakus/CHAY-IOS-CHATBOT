@@ -50,6 +50,16 @@ struct Connector: Codable, Identifiable, Equatable {
     }
 }
 
+extension Connector.Auth {
+    init(_ kind: ConnectorAuthKind) {
+        switch kind {
+        case .none: self = .none
+        case .token: self = .token
+        case .oauth: self = .oauth
+        }
+    }
+}
+
 /// Bağlayıcılar, bağlantıları ve girişleri.
 @Observable @MainActor
 final class ConnectorLibrary {
@@ -158,6 +168,39 @@ final class ConnectorLibrary {
         guard let index = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[index].enabledByDefault = enabled
         persist()
+    }
+
+    /// Aynı adrese sahip bağlayıcı (sonda `/` veya büyük harf farkı önemsiz).
+    func connector(matchingURL url: String) -> Connector? {
+        let target = ConnectorAddress.normalized(url)
+        return connectors.first { ConnectorAddress.normalized($0.url) == target }
+    }
+
+    /// Sohbetten kurulum: kaydeder, giriş yapar ve araçları yükler. Yeni bağlayıcı başarısız olursa kaydı geri alınır.
+    /// Doğrulanmış liste dışındaki bağlayıcılar yeni sohbetlerde kapalı başlar.
+    func connectFromChat(_ proposal: ConnectorProposal, token: String, clientID: String) async throws -> Connector {
+        let existing = connector(matchingURL: proposal.url)
+        var connector = existing ?? Connector(name: proposal.name, url: proposal.url)
+        if existing == nil {
+            connector.auth = Connector.Auth(proposal.auth)
+            connector.enabledByDefault = proposal.source == .verified
+        }
+        let trimmedClientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedClientID.isEmpty {
+            connector.oauthClientID = trimmedClientID
+        }
+        save(connector, token: token.isEmpty ? self.token(for: connector.id) : token)
+        do {
+            if connector.auth == .oauth, !isSignedIn(connector.id) {
+                try await signIn(connector.id)
+            } else {
+                try await refreshTools(connector.id)
+            }
+        } catch {
+            if existing == nil { delete(connector.id) }
+            throw error
+        }
+        return self.connector(connector.id) ?? connector
     }
 
     /// Sunucuya bağlanıp araç listesini yeniler.

@@ -86,25 +86,11 @@ public enum MCPOAuth {
     ) async throws -> OAuthLogin {
         guard serverURL.scheme?.lowercased() == "https" else { throw MCPError.insecureURL }
 
-        // 1. Korunan kaynak bilgisi: önce 401 yanıtındaki adres, sonra bilinen yollar.
-        let challenged = await probeResourceMetadata(serverURL, transport: transport)
-        var resource: ProtectedResource?
-        for candidate in [challenged].compactMap({ $0 }) + protectedResourceCandidates(for: serverURL) {
-            if let found: ProtectedResource = try? await getJSON(candidate, transport: transport), !found.authorization_servers.isEmpty {
-                resource = found
-                break
-            }
-        }
-
-        // 2. Yetki sunucusu bilgisi. Eski sunucularda (kaynak bilgisi yok) MCP sunucusunun kökü kullanılır.
-        let issuer = resource?.authorization_servers.first.flatMap(URL.init(string:)) ?? origin(of: serverURL)
-        var metadata: AuthorizationServer?
-        for candidate in authorizationServerCandidates(for: issuer) {
-            if let found: AuthorizationServer = try? await getJSON(candidate, transport: transport) {
-                metadata = found
-                break
-            }
-        }
+        // 1-2. Korunan kaynak ve yetki sunucusu bilgisi.
+        let probed = await probe(serverURL, transport: transport)
+        let found = await discover(serverURL, challenged: probed?.metadata, transport: transport)
+        let resource = found.resource
+        var metadata = found.metadata
         if metadata == nil, resource == nil {
             metadata = AuthorizationServer(
                 authorization_endpoint: origin(of: serverURL).appendingPathComponent("authorize"),
@@ -212,8 +198,41 @@ public enum MCPOAuth {
 
     // MARK: - Keşif
 
-    /// Token'sız bir istek atar; sunucu 401 ile kaynak bilgisi adresini verirse onu döndürür.
-    static func probeResourceMetadata(_ serverURL: URL, transport: any HTTPTransport) async -> URL? {
+    /// Sunucunun nasıl giriş istediğini bulur. Tarayıcı girişi için otomatik istemci kaydı gerekir;
+    /// yoksa token istenir. Sunucuya ulaşılamazsa veya MCP gibi yanıt vermezse `nil`.
+    public static func detectAuth(serverURL: URL, transport: any HTTPTransport) async -> ConnectorAuthKind? {
+        guard let probed = await probe(serverURL, transport: transport) else { return nil }
+        if (200..<300).contains(probed.status) { return ConnectorAuthKind.none }
+        guard probed.status == 401 || probed.status == 403 else { return nil }
+        let found = await discover(serverURL, challenged: probed.metadata, transport: transport)
+        return found.metadata?.registration_endpoint == nil ? .token : .oauth
+    }
+
+    /// Korunan kaynak bilgisi (önce 401 yanıtındaki adres, sonra bilinen yollar) ve yetki sunucusu bilgisi.
+    /// Eski sunucularda (kaynak bilgisi yok) MCP sunucusunun kökü kullanılır.
+    private static func discover(
+        _ serverURL: URL,
+        challenged: URL?,
+        transport: any HTTPTransport
+    ) async -> (resource: ProtectedResource?, metadata: AuthorizationServer?) {
+        var resource: ProtectedResource?
+        for candidate in [challenged].compactMap({ $0 }) + protectedResourceCandidates(for: serverURL) {
+            if let found: ProtectedResource = try? await getJSON(candidate, transport: transport), !found.authorization_servers.isEmpty {
+                resource = found
+                break
+            }
+        }
+        let issuer = resource?.authorization_servers.first.flatMap(URL.init(string:)) ?? origin(of: serverURL)
+        for candidate in authorizationServerCandidates(for: issuer) {
+            if let found: AuthorizationServer = try? await getJSON(candidate, transport: transport) {
+                return (resource, found)
+            }
+        }
+        return (resource, nil)
+    }
+
+    /// Token'sız bir istek atar: durum kodu ve 401 yanıtındaki kaynak bilgisi adresi.
+    static func probe(_ serverURL: URL, transport: any HTTPTransport) async -> (status: Int, metadata: URL?)? {
         let body = try? JSONEncoder().encode(RPCRequest(id: 0, method: "initialize", params: [
             "protocolVersion": .string(MCPClient.protocolVersion),
             "capabilities": [:],
@@ -225,8 +244,8 @@ public enum MCPOAuth {
             headers: ["Content-Type": "application/json", "Accept": "application/json, text/event-stream"],
             body: body
         )
-        guard let response = try? await transport.send(request), response.statusCode == 401 else { return nil }
-        return MCPClient.resourceMetadataURL(fromChallenge: response.header("www-authenticate"))
+        guard let response = try? await transport.send(request) else { return nil }
+        return (response.statusCode, MCPClient.resourceMetadataURL(fromChallenge: response.header("www-authenticate")))
     }
 
     static func origin(of url: URL) -> URL {
