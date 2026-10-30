@@ -18,7 +18,9 @@ extension LLMError {
     public var isTemporary: Bool {
         switch self {
         case let .http(status, _): status == 408 || status == 429 || (500..<600).contains(status)
-        case .server, .emptyResponse: true
+        case .server: true
+        // İçerik filtresi kasıtlı bir red; yeniden denemek veya başka modele geçmek çözüm değil.
+        case let .emptyResponse(reason): reason != "content_filter"
         default: false
         }
     }

@@ -1041,9 +1041,14 @@ private struct EchoNamed: Tool {
 
 @Test func emptyRepliesAreNotStoredAndCutOffsAreReported() async throws {
     let filtered = ScriptedTransport([[#"data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}"#, "data: [DONE]"]])
+    let unused = ScriptedTransport([doneReply])
     await #expect(throws: LLMError.emptyResponse(reason: "content_filter")) {
-        try await collect(AgentLoop(client: try llmClient(filtered), tools: [], retryDelays: quiet))
+        try await collect(AgentLoop(client: try llmClient(filtered), tools: [],
+                                    fallbacks: [FallbackModel(id: UUID(), name: "yedek", client: try llmClient(unused))],
+                                    retryDelays: [.zero]))
     }
+    #expect(filtered.requests.count == 1)
+    #expect(unused.requests.isEmpty)
 
     let backup = ScriptedTransport([doneReply])
     let silent = ScriptedTransport([["data: [DONE]"]])
